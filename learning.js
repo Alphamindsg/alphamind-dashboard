@@ -18,6 +18,14 @@ var learningPageState = {
   isReviewing: false
 };
 
+var COMPARISON_CLASS_ALLOWLIST = ["match", "partial_match", "mismatch"];
+
+function normalizeComparisonResult(value) {
+  var normalized = String(value || "").toLowerCase().trim();
+
+  return COMPARISON_CLASS_ALLOWLIST.indexOf(normalized) !== -1 ? normalized : null;
+}
+
 function parseLegacySupportingEvidenceText(text) {
   var parsed = {};
 
@@ -403,9 +411,13 @@ function createLessonCard(lesson, options) {
     : null;
   var prediction = predictionId ? learningPageState.predictionsById[predictionId] : null;
   var outcome = predictionId ? learningPageState.outcomesByPredictionId[predictionId] : null;
-  var comparisonResult = evidence.comparison || "unknown";
-  var comparisonClass = "learning-item__comparison learning-item__comparison--" + comparisonResult;
-  var comparisonLabel = LearningEngine.formatComparisonLabel(comparisonResult);
+  var comparisonResult = normalizeComparisonResult(evidence.comparison);
+  var comparisonClass = "learning-item__comparison";
+  var comparisonLabel = LearningEngine.formatComparisonLabel(comparisonResult || "unknown");
+
+  if (comparisonResult) {
+    comparisonClass += " learning-item__comparison--" + comparisonResult;
+  }
 
   card.innerHTML =
     '<div class="learning-item__header">' +

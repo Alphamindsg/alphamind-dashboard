@@ -380,25 +380,9 @@
     var predictions = await loadPredictions();
     var pairs = [];
 
-    console.log(
-      "[AtlasLearningEngine] loadPredictionsWithOutcomes: predictions loaded =",
-      predictions.length
-    );
-
     for (var i = 0; i < predictions.length; i += 1) {
       var prediction = predictions[i];
-      console.log(
-        "[AtlasLearningEngine] checking prediction id =",
-        prediction.id
-      );
-
       var outcome = await loadOutcomeByPredictionId(prediction.id);
-      console.log(
-        "[AtlasLearningEngine] outcome for prediction id",
-        prediction.id,
-        "=",
-        outcome
-      );
 
       if (outcome) {
         pairs.push({
@@ -407,11 +391,6 @@
         });
       }
     }
-
-    console.log(
-      "[AtlasLearningEngine] loadPredictionsWithOutcomes: matched pairs =",
-      pairs.length
-    );
 
     return pairs;
   }
