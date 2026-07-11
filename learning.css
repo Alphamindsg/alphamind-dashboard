@@ -1,0 +1,248 @@
+@import url("styles.css");
+
+/* Sidebar links as anchors on the Learning page */
+a.sidebar__link {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+}
+
+/* ============================================
+   Learning page — Atlas Learning Engine v0.1
+   ============================================ */
+
+.learning-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.learning-grid--single {
+  grid-template-columns: 1fr;
+}
+
+.learning-section {
+  padding: 24px;
+}
+
+.learning-section__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.learning-section__title {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.learning-section__subtitle {
+  font-size: 0.9rem;
+  color: var(--color-text-secondary);
+}
+
+.learning-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.learning-form__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.learning-select {
+  flex: 1;
+  min-width: 220px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.learning-select:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.12);
+}
+
+.learning-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.learning-item {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  background: var(--color-bg);
+}
+
+.learning-item__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.learning-item__title {
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.learning-item__meta {
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+  margin-top: 4px;
+}
+
+.learning-item__comparison {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 4px 8px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+
+.learning-item__comparison--match {
+  background: rgba(52, 199, 89, 0.12);
+  color: #248a3d;
+}
+
+.learning-item__comparison--partial_match {
+  background: rgba(255, 159, 10, 0.12);
+  color: #b25000;
+}
+
+.learning-item__comparison--mismatch {
+  background: rgba(255, 59, 48, 0.1);
+  color: #c41e16;
+}
+
+.learning-item__badge {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 4px 8px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+
+.learning-item__badge--pending {
+  background: rgba(255, 159, 10, 0.12);
+  color: #b25000;
+}
+
+.learning-item__badge--active {
+  background: rgba(52, 199, 89, 0.12);
+  color: #248a3d;
+}
+
+.learning-item__badge--draft {
+  background: rgba(0, 113, 227, 0.08);
+  color: var(--color-accent);
+}
+
+.learning-field {
+  margin-bottom: 12px;
+}
+
+.learning-field__label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+
+.learning-field__value {
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: var(--color-text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.learning-item__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--color-border);
+}
+
+.learning-outcome-pair {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 14px;
+  background: var(--color-bg);
+  margin-top: 12px;
+}
+
+.learning-outcome-pair__row {
+  display: grid;
+  grid-template-columns: 88px 1fr;
+  gap: 8px 12px;
+  font-size: 0.88rem;
+  margin-bottom: 8px;
+}
+
+.learning-outcome-pair__row:last-child {
+  margin-bottom: 0;
+}
+
+.learning-outcome-pair__label {
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.learning-outcome-pair__value {
+  color: var(--color-text);
+  word-break: break-word;
+}
+
+.learning-atlas-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: var(--radius-md);
+  background: rgba(0, 113, 227, 0.06);
+  border: 1px solid rgba(0, 113, 227, 0.15);
+  margin-bottom: 16px;
+}
+
+.learning-atlas-banner__label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-accent);
+}
+
+.learning-atlas-banner__text {
+  font-size: 0.88rem;
+  color: var(--color-text-secondary);
+}
+
+@media (max-width: 960px) {
+  .learning-grid {
+    grid-template-columns: 1fr;
+  }
+}
