@@ -12,6 +12,14 @@ var memoryPageState = {
 
 var isSavingMemory = false;
 
+var IMPORTANCE_CLASS_ALLOWLIST = ["low", "medium", "high", "critical"];
+
+function normalizeImportanceClass(value) {
+  var normalized = String(value || "").toLowerCase().trim();
+
+  return IMPORTANCE_CLASS_ALLOWLIST.indexOf(normalized) !== -1 ? normalized : "medium";
+}
+
 document.addEventListener("DOMContentLoaded", function () {
   displayCurrentDate();
   setupSidebarNavigation();
@@ -402,6 +410,7 @@ function createMemoryCard(memory, options) {
   var tagsHtml = buildTagsHtml(memory.tags, 3);
   var owner = memory.owner || MemoryEngine.DEFAULT_OWNER;
   var importance = memory.importance || "Medium";
+  var importanceClass = normalizeImportanceClass(importance);
 
   memoryItem.innerHTML =
     '<div class="memory-item__header">' +
@@ -412,7 +421,7 @@ function createMemoryCard(memory, options) {
     (tagsHtml ? '<div class="memory-item__tags">' + tagsHtml + '</div>' : '') +
     '<div class="memory-item__footer">' +
       '<span class="memory-item__owner">' + escapeHtml(owner) + '</span>' +
-      '<span class="memory-item__importance memory-item__importance--' + importance.toLowerCase() + '">' +
+      '<span class="memory-item__importance memory-item__importance--' + importanceClass + '">' +
         escapeHtml(importance) +
       '</span>' +
       '<span class="memory-item__date">' + formattedDate + '</span>' +
@@ -447,7 +456,8 @@ async function openMemoryDetail(memoryId) {
     document.getElementById("memory-detail-owner").textContent = memory.owner || MemoryEngine.DEFAULT_OWNER;
     document.getElementById("memory-detail-importance").textContent = memory.importance || "Medium";
     document.getElementById("memory-detail-importance").className =
-      "memory-detail__importance memory-detail__importance--" + (memory.importance || "Medium").toLowerCase();
+      "memory-detail__importance memory-detail__importance--" +
+      normalizeImportanceClass(memory.importance);
     document.getElementById("memory-detail-title").textContent = memory.title;
     document.getElementById("memory-detail-date").textContent = formatMemoryDate(memory.created_at);
     document.getElementById("memory-detail-notes").textContent = memory.notes;
