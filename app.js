@@ -10,6 +10,11 @@ var memoryPageState = {
   searchTimer: null
 };
 
+var memoryUiState = {
+  editingId: null,
+  activeMemory: null
+};
+
 var isSavingMemory = false;
 
 var IMPORTANCE_CLASS_ALLOWLIST = ["low", "medium", "high", "critical"];
@@ -110,11 +115,16 @@ function showPage(pageName) {
 
 function setupQuickActions() {
   var addMemoryButton = document.getElementById("btn-add-memory");
+  var addMemoryPageButton = document.getElementById("btn-add-memory-page");
   var reviewLearningButton = document.getElementById("btn-review-learning");
   var viewEmployeesButton = document.getElementById("btn-view-employees");
 
   if (addMemoryButton) {
-    addMemoryButton.addEventListener("click", openMemoryModal);
+    addMemoryButton.addEventListener("click", openCreateMemoryModal);
+  }
+
+  if (addMemoryPageButton) {
+    addMemoryPageButton.addEventListener("click", openCreateMemoryModal);
   }
 
   if (reviewLearningButton) {
@@ -200,6 +210,7 @@ function setupMemoryPage() {
 function setupMemoryDetailPanel() {
   var overlay = document.getElementById("memory-detail-overlay");
   var closeButton = document.getElementById("memory-detail-close");
+  var editButton = document.getElementById("btn-edit-memory");
 
   if (!overlay) {
     return;
@@ -207,6 +218,10 @@ function setupMemoryDetailPanel() {
 
   if (closeButton) {
     closeButton.addEventListener("click", closeMemoryDetail);
+  }
+
+  if (editButton) {
+    editButton.addEventListener("click", openEditMemoryModal);
   }
 
   overlay.addEventListener("click", function (event) {
@@ -222,12 +237,51 @@ function setupMemoryDetailPanel() {
   });
 }
 
-function openMemoryModal() {
-  var modal = document.getElementById("memory-modal");
-  var titleInput = document.getElementById("memory-title");
+function openCreateMemoryModal() {
+  openMemoryModal(null);
+}
 
-  if (!modal) {
+function openEditMemoryModal() {
+  var memory = memoryUiState.activeMemory;
+
+  if (!memory) {
     return;
+  }
+
+  closeMemoryDetail();
+  openMemoryModal(memory);
+}
+
+function openMemoryModal(memory) {
+  var modal = document.getElementById("memory-modal");
+  var form = document.getElementById("memory-form");
+  var modalTitle = document.getElementById("modal-title");
+  var modalSubtitle = document.getElementById("modal-subtitle");
+  var titleInput = document.getElementById("memory-title");
+  var categoryInput = document.getElementById("memory-category");
+  var notesInput = document.getElementById("memory-notes");
+  var tagsInput = document.getElementById("memory-tags");
+  var saveButton = document.getElementById("btn-save-memory");
+
+  if (!modal || !form) {
+    return;
+  }
+
+  form.reset();
+  memoryUiState.editingId = memory ? memory.id : null;
+
+  if (memory) {
+    modalTitle.textContent = "Edit Memory";
+    modalSubtitle.textContent = "Update this memory and refresh its derived metadata.";
+    saveButton.textContent = "Save Changes";
+    titleInput.value = memory.title || "";
+    categoryInput.value = memory.category || "";
+    notesInput.value = memory.notes || "";
+    tagsInput.value = formatTagsForInput(MemoryEngine.getManualTags(memory));
+  } else {
+    modalTitle.textContent = "Add Memory";
+    modalSubtitle.textContent = "Save a note to the AlphaMind memory system.";
+    saveButton.textContent = "Save";
   }
 
   modal.hidden = false;
@@ -240,6 +294,7 @@ function openMemoryModal() {
 
 function closeMemoryModal() {
   var modal = document.getElementById("memory-modal");
+  var form = document.getElementById("memory-form");
 
   if (!modal) {
     return;
@@ -247,6 +302,11 @@ function closeMemoryModal() {
 
   modal.hidden = true;
   document.body.style.overflow = "";
+  memoryUiState.editingId = null;
+
+  if (form) {
+    form.reset();
+  }
 }
 
 async function saveMemoryFromForm(form) {
@@ -257,24 +317,30 @@ async function saveMemoryFromForm(form) {
   var titleInput = document.getElementById("memory-title");
   var categoryInput = document.getElementById("memory-category");
   var notesInput = document.getElementById("memory-notes");
+  var tagsInput = document.getElementById("memory-tags");
   var saveButton = form.querySelector('button[type="submit"]');
+  var editingId = memoryUiState.editingId;
 
   isSavingMemory = true;
 
   try {
     if (saveButton) {
       saveButton.disabled = true;
-      saveButton.textContent = "Saving...";
+      saveButton.textContent = editingId ? "Saving Changes..." : "Saving...";
     }
 
-    await MemoryEngine.saveMemory({
+    var input = {
       title: titleInput.value,
       category: categoryInput.value,
       notes: notesInput.value,
+      tags: tagsInput ? tagsInput.value : "",
       source: "dashboard"
-    });
+    };
 
-    form.reset();
+    var savedMemory = editingId
+      ? await MemoryEngine.updateMemory(editingId, input)
+      : await MemoryEngine.saveMemory(input);
+
     closeMemoryModal();
     await renderRecentMemories();
 
@@ -283,16 +349,24 @@ async function saveMemoryFromForm(form) {
       await loadMemoryPage();
     }
 
-    showToast("Memory saved successfully");
+    if (editingId) {
+      await openMemoryDetail(savedMemory.id);
+    }
+
+    showToast(editingId ? "Memory updated successfully" : "Memory saved successfully");
   } catch (error) {
     console.error("Failed to save memory:", error);
-    showToast("Could not save memory. Check your Supabase settings and try again.");
+    showToast(
+      editingId
+        ? "Could not update memory. Check your Supabase settings and try again."
+        : "Could not save memory. Check your Supabase settings and try again."
+    );
   } finally {
     isSavingMemory = false;
 
     if (saveButton) {
       saveButton.disabled = false;
-      saveButton.textContent = "Save";
+      saveButton.textContent = editingId ? "Save Changes" : "Save";
     }
   }
 }
@@ -411,6 +485,7 @@ function createMemoryCard(memory, options) {
   var owner = memory.owner || MemoryEngine.DEFAULT_OWNER;
   var importance = memory.importance || "Medium";
   var importanceClass = normalizeImportanceClass(importance);
+  var confidenceLabel = formatConfidence(memory.confidence_score);
 
   memoryItem.innerHTML =
     '<div class="memory-item__header">' +
@@ -424,6 +499,7 @@ function createMemoryCard(memory, options) {
       '<span class="memory-item__importance memory-item__importance--' + importanceClass + '">' +
         escapeHtml(importance) +
       '</span>' +
+      '<span class="memory-item__confidence">' + escapeHtml(confidenceLabel) + '</span>' +
       '<span class="memory-item__date">' + formattedDate + '</span>' +
     '</div>';
 
@@ -452,12 +528,16 @@ async function openMemoryDetail(memoryId) {
     var memory = await MemoryEngine.getMemoryById(memoryId);
     var relatedMemories = await MemoryEngine.loadRelatedMemories(memory);
 
+    memoryUiState.activeMemory = memory;
+
     document.getElementById("memory-detail-category").textContent = memory.category;
     document.getElementById("memory-detail-owner").textContent = memory.owner || MemoryEngine.DEFAULT_OWNER;
     document.getElementById("memory-detail-importance").textContent = memory.importance || "Medium";
     document.getElementById("memory-detail-importance").className =
       "memory-detail__importance memory-detail__importance--" +
       normalizeImportanceClass(memory.importance);
+    document.getElementById("memory-detail-confidence").textContent =
+      formatConfidence(memory.confidence_score);
     document.getElementById("memory-detail-title").textContent = memory.title;
     document.getElementById("memory-detail-date").textContent = formatMemoryDate(memory.created_at);
     document.getElementById("memory-detail-notes").textContent = memory.notes;
@@ -533,10 +613,12 @@ function closeMemoryDetail() {
 
   overlay.hidden = true;
   document.body.style.overflow = "";
+  memoryUiState.activeMemory = null;
 }
 
 function buildTagsHtml(tags, limit) {
-  var visibleTags = limit ? tags.slice(0, limit) : tags;
+  var safeTags = Array.isArray(tags) ? tags : [];
+  var visibleTags = limit ? safeTags.slice(0, limit) : safeTags;
 
   if (!visibleTags.length) {
     return "";
@@ -547,6 +629,20 @@ function buildTagsHtml(tags, limit) {
       return '<span class="memory-tag">' + escapeHtml(tag) + '</span>';
     })
     .join("");
+}
+
+function formatTagsForInput(tags) {
+  return (Array.isArray(tags) ? tags : []).join(", ");
+}
+
+function formatConfidence(value) {
+  var confidence = Number(value);
+
+  if (!Number.isFinite(confidence)) {
+    confidence = 0;
+  }
+
+  return "Confidence " + Math.min(100, Math.max(0, Math.round(confidence))) + "%";
 }
 
 function getLoadingStateHtml(title, text) {

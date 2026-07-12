@@ -23,6 +23,7 @@
   --color-ready: #34c759;
   --color-waiting: #ff9f0a;
   --color-monitoring: #5ac8fa;
+  --color-confidence: #5e5ce6;
   --shadow-card: 0 2px 12px rgba(0, 0, 0, 0.06);
   --shadow-modal: 0 8px 32px rgba(0, 0, 0, 0.12);
   --radius-sm: 8px;
@@ -191,6 +192,12 @@ textarea {
   font-size: 0.9rem;
   white-space: nowrap;
   padding-top: 6px;
+}
+
+.page-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 /* ============================================
@@ -482,6 +489,15 @@ textarea {
   color: #c41e16;
 }
 
+.memory-item__confidence {
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--color-confidence);
+  background: rgba(94, 92, 230, 0.1);
+  padding: 2px 8px;
+  border-radius: 20px;
+}
+
 .memory-item__date {
   font-size: 0.75rem;
   color: var(--color-text-secondary);
@@ -617,9 +633,16 @@ textarea {
 
 .memory-detail__header {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
   padding: 16px 20px 0;
   flex-shrink: 0;
+}
+
+.memory-detail__edit {
+  padding: 7px 12px;
+  font-size: 0.8rem;
 }
 
 .memory-detail__close {
@@ -700,6 +723,16 @@ textarea {
 .memory-detail__importance--critical {
   background: rgba(255, 59, 48, 0.1);
   color: #c41e16;
+}
+
+.memory-detail__confidence {
+  display: inline-block;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--color-confidence);
+  background: rgba(94, 92, 230, 0.1);
+  padding: 4px 10px;
+  border-radius: 20px;
 }
 
 .memory-detail__title {
@@ -910,6 +943,11 @@ textarea {
 .form-field__label {
   font-size: 0.85rem;
   font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+.form-field__hint {
+  font-size: 0.75rem;
   color: var(--color-text-secondary);
 }
 

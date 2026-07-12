@@ -1,7 +1,6 @@
 /**
- * AlphaMind OS — Memory Engine v2
- * Central module for saving, loading, searching, and organizing company memories.
- * Future AI employees (Athena, Atlas, Orion, etc.) will use this same engine.
+ * AlphaMind OS — Memory MVP Engine (MEM-001)
+ * Create, edit, load, search, tag, score, and relate company memories.
  */
 
 (function () {
@@ -9,9 +8,12 @@
 
   var DEFAULT_OWNER = "Athena";
   var MEMORY_TABLE = "company_memories";
-  var MEMORY_COLUMNS =
+  var MEMORY_COLUMNS_BASE =
     "id, title, category, notes, source, created_at, owner, importance, tags, related_memory_ids";
+  var MEMORY_COLUMNS_WITH_CONFIDENCE = MEMORY_COLUMNS_BASE + ", confidence_score";
   var MAX_RELATED = 3;
+  var MAX_TAGS = 12;
+  var confidenceColumnAvailable = null;
   var STOP_WORDS = {
     the: true,
     and: true,
@@ -64,18 +66,53 @@
     return window.supabaseClient;
   }
 
-  /**
-   * Extract rule-based tags from memory content. No external API.
-   */
-  function generateTags(title, category, notes) {
-    var combined = (title + " " + notes).toLowerCase();
+  function clampNumber(value, minimum, maximum) {
+    return Math.min(maximum, Math.max(minimum, value));
+  }
+
+  function normalizeTag(tag) {
+    return String(tag || "")
+      .toLowerCase()
+      .trim()
+      .replace(/^#+/, "")
+      .replace(/[^a-z0-9\s-]/g, "")
+      .replace(/\s+/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 32);
+  }
+
+  function normalizeTags(input) {
+    var values = Array.isArray(input) ? input : String(input || "").split(",");
     var tags = [];
-    var seen = {};
+    var seen = Object.create(null);
+
+    values.forEach(function (value) {
+      var tag = normalizeTag(value);
+
+      if (!tag || seen[tag] || tags.length >= MAX_TAGS) {
+        return;
+      }
+
+      seen[tag] = true;
+      tags.push(tag);
+    });
+
+    return tags;
+  }
+
+  /**
+   * Extract deterministic tags from memory content and merge user-entered tags.
+   */
+  function generateTags(title, category, notes, manualTags) {
+    var combined = (String(title || "") + " " + String(notes || "")).toLowerCase();
+    var tags = [];
+    var seen = Object.create(null);
 
     function addTag(tag) {
-      var normalized = tag.toLowerCase().trim();
+      var normalized = normalizeTag(tag);
 
-      if (!normalized || seen[normalized]) {
+      if (!normalized || seen[normalized] || tags.length >= MAX_TAGS) {
         return;
       }
 
@@ -83,8 +120,10 @@
       tags.push(normalized);
     }
 
+    normalizeTags(manualTags).forEach(addTag);
+
     if (category) {
-      addTag(category.toLowerCase());
+      addTag(category);
     }
 
     KEYWORD_TAGS.forEach(function (entry) {
@@ -102,14 +141,14 @@
         }
       });
 
-    return tags.slice(0, 8);
+    return tags;
   }
 
   /**
    * Calculate importance as text: Low, Medium, High, or Critical.
    */
   function calculateImportance(title, category, notes) {
-    var combined = (title + " " + notes).toLowerCase();
+    var combined = (String(title || "") + " " + String(notes || "")).toLowerCase();
     var score = 0;
 
     if (category === "Strategy") {
@@ -120,11 +159,11 @@
       score += 2;
     }
 
-    if (notes.length > 200) {
+    if (String(notes || "").length > 200) {
       score += 1;
     }
 
-    if (category === "Personal" && notes.length < 80) {
+    if (category === "Personal" && String(notes || "").length < 80) {
       score -= 1;
     }
 
@@ -144,6 +183,217 @@
   }
 
   /**
+   * Deterministic content-confidence score. This measures completeness and
+   * evidence signals; it is not an AI claim that the memory is objectively true.
+   */
+  function calculateConfidence(title, category, notes, tags) {
+    var normalizedTitle = String(title || "").trim();
+    var normalizedNotes = String(notes || "").trim();
+    var combined = (normalizedTitle + " " + normalizedNotes).toLowerCase();
+    var score = 35;
+
+    if (normalizedTitle.length >= 8) {
+      score += 10;
+    }
+
+    if (category) {
+      score += 10;
+    }
+
+    if (normalizedNotes.length >= 40) {
+      score += 10;
+    }
+
+    if (normalizedNotes.length >= 120) {
+      score += 10;
+    }
+
+    if (normalizedNotes.length >= 250) {
+      score += 5;
+    }
+
+    if (normalizeTags(tags).length >= 2) {
+      score += 5;
+    }
+
+    if (/\b(approved|confirmed|verified|evidence|source|metric|result|decision|meeting|commit)\b/i.test(combined)) {
+      score += 10;
+    }
+
+    if (/\b(unknown|uncertain|unverified|assumption|estimate|maybe)\b/i.test(combined)) {
+      score -= 10;
+    }
+
+    return clampNumber(Math.round(score), 20, 95);
+  }
+
+  function buildMemoryValues(input) {
+    var title = String(input.title || "").trim();
+    var category = String(input.category || "").trim();
+    var notes = String(input.notes || "").trim();
+
+    if (!title || !category || !notes) {
+      throw new Error("Title, category, and notes are required.");
+    }
+
+    var tags = generateTags(title, category, notes, input.tags || []);
+
+    return {
+      title: title,
+      category: category,
+      notes: notes,
+      tags: tags,
+      importance: calculateImportance(title, category, notes),
+      confidence_score: calculateConfidence(title, category, notes, tags)
+    };
+  }
+
+  function getManualTags(memory) {
+    var automaticTags = generateTags(
+      memory && memory.title,
+      memory && memory.category,
+      memory && memory.notes,
+      []
+    );
+    var automaticTagSet = Object.create(null);
+
+    automaticTags.forEach(function (tag) {
+      automaticTagSet[tag] = true;
+    });
+
+    return normalizeTags((memory && memory.tags) || []).filter(function (tag) {
+      return !automaticTagSet[tag];
+    });
+  }
+
+  function normalizeMemory(memory) {
+    var normalized = Object.assign({}, memory || {});
+    var rawConfidence = normalized.confidence_score;
+    var confidence =
+      rawConfidence === null || rawConfidence === undefined || rawConfidence === ""
+        ? Number.NaN
+        : Number(rawConfidence);
+
+    normalized.tags = normalizeTags(normalized.tags || []);
+    normalized.related_memory_ids = Array.isArray(normalized.related_memory_ids)
+      ? normalized.related_memory_ids
+      : [];
+
+    if (!Number.isFinite(confidence)) {
+      confidence = calculateConfidence(
+        normalized.title,
+        normalized.category,
+        normalized.notes,
+        normalized.tags
+      );
+    }
+
+    normalized.confidence_score = clampNumber(Math.round(confidence), 0, 100);
+
+    return normalized;
+  }
+
+  function isMissingConfidenceColumn(error) {
+    var message = String(
+      (error && (error.message || error.details || error.hint || error.code)) || ""
+    ).toLowerCase();
+
+    return (
+      message.indexOf("confidence_score") !== -1 &&
+      (message.indexOf("column") !== -1 || message.indexOf("schema cache") !== -1)
+    );
+  }
+
+  function withoutConfidence(payload) {
+    var legacyPayload = Object.assign({}, payload);
+    delete legacyPayload.confidence_score;
+    return legacyPayload;
+  }
+
+  async function selectMemoryData(buildQuery) {
+    var result;
+
+    if (confidenceColumnAvailable !== false) {
+      result = await buildQuery(MEMORY_COLUMNS_WITH_CONFIDENCE);
+
+      if (!result.error) {
+        confidenceColumnAvailable = true;
+        return result;
+      }
+
+      if (!isMissingConfidenceColumn(result.error)) {
+        return result;
+      }
+
+      confidenceColumnAvailable = false;
+    }
+
+    return buildQuery(MEMORY_COLUMNS_BASE);
+  }
+
+  async function insertMemoryRow(payload) {
+    var supabaseClient = getSupabaseClient();
+    var result;
+
+    if (confidenceColumnAvailable !== false) {
+      result = await supabaseClient
+        .from(MEMORY_TABLE)
+        .insert([payload])
+        .select(MEMORY_COLUMNS_WITH_CONFIDENCE)
+        .single();
+
+      if (!result.error) {
+        confidenceColumnAvailable = true;
+        return result;
+      }
+
+      if (!isMissingConfidenceColumn(result.error)) {
+        return result;
+      }
+
+      confidenceColumnAvailable = false;
+    }
+
+    return supabaseClient
+      .from(MEMORY_TABLE)
+      .insert([withoutConfidence(payload)])
+      .select(MEMORY_COLUMNS_BASE)
+      .single();
+  }
+
+  async function updateMemoryRow(id, payload) {
+    var supabaseClient = getSupabaseClient();
+    var result;
+
+    if (confidenceColumnAvailable !== false) {
+      result = await supabaseClient
+        .from(MEMORY_TABLE)
+        .update(payload)
+        .eq("id", id)
+        .select(MEMORY_COLUMNS_WITH_CONFIDENCE)
+        .single();
+
+      if (!result.error) {
+        confidenceColumnAvailable = true;
+        return result;
+      }
+
+      if (!isMissingConfidenceColumn(result.error)) {
+        return result;
+      }
+
+      confidenceColumnAvailable = false;
+    }
+
+    return supabaseClient
+      .from(MEMORY_TABLE)
+      .update(withoutConfidence(payload))
+      .eq("id", id)
+      .select(MEMORY_COLUMNS_BASE)
+      .single();
+  }
+
+  /**
    * Score how related two memories are based on tags and category.
    */
   function relatednessScore(memoryA, memoryB) {
@@ -152,8 +402,8 @@
     }
 
     var score = 0;
-    var tagsA = memoryA.tags || [];
-    var tagsB = memoryB.tags || [];
+    var tagsA = normalizeTags(memoryA.tags || []);
+    var tagsB = normalizeTags(memoryB.tags || []);
 
     if (memoryA.category && memoryA.category === memoryB.category) {
       score += 2;
@@ -192,57 +442,73 @@
   }
 
   /**
-   * Save a new memory with auto-generated tags, importance, and owner.
+   * Save a new memory with user tags, automatic tags, confidence, importance,
+   * and simple related-memory links.
    */
   async function saveMemory(input) {
-    var supabaseClient = getSupabaseClient();
-    var title = input.title.trim();
-    var category = input.category;
-    var notes = input.notes.trim();
-    var tags = generateTags(title, category, notes);
-    var importance = calculateImportance(title, category, notes);
-
-    var insertResult = await supabaseClient
-      .from(MEMORY_TABLE)
-      .insert([
-        {
-          title: title,
-          category: category,
-          notes: notes,
-          source: input.source || "dashboard",
-          owner: DEFAULT_OWNER,
-          importance: importance,
-          tags: tags,
-          related_memory_ids: []
-        }
-      ])
-      .select(MEMORY_COLUMNS)
-      .single();
+    var values = buildMemoryValues(input);
+    var insertResult = await insertMemoryRow({
+      title: values.title,
+      category: values.category,
+      notes: values.notes,
+      source: input.source || "dashboard",
+      owner: DEFAULT_OWNER,
+      importance: values.importance,
+      confidence_score: values.confidence_score,
+      tags: values.tags,
+      related_memory_ids: []
+    });
 
     if (insertResult.error) {
       throw insertResult.error;
     }
 
-    var savedMemory = insertResult.data;
+    var savedMemory = normalizeMemory(insertResult.data);
     var existingMemories = await loadMemories({ limit: 200 });
     var relatedIds = findRelatedMemoryIds(savedMemory, existingMemories);
 
     if (relatedIds.length > 0) {
-      var updateResult = await supabaseClient
-        .from(MEMORY_TABLE)
-        .update({ related_memory_ids: relatedIds })
-        .eq("id", savedMemory.id)
-        .select(MEMORY_COLUMNS)
-        .single();
+      var relatedUpdate = await updateMemoryRow(savedMemory.id, {
+        related_memory_ids: relatedIds
+      });
 
-      if (updateResult.error) {
-        throw updateResult.error;
+      if (relatedUpdate.error) {
+        throw relatedUpdate.error;
       }
 
-      return updateResult.data;
+      return normalizeMemory(relatedUpdate.data);
     }
 
     return savedMemory;
+  }
+
+  /**
+   * Edit an existing memory and recalculate derived metadata.
+   */
+  async function updateMemory(id, input) {
+    var values = buildMemoryValues(input);
+    var existingMemories = await loadMemories({ limit: 200 });
+    var targetMemory = {
+      id: id,
+      category: values.category,
+      tags: values.tags
+    };
+    var relatedIds = findRelatedMemoryIds(targetMemory, existingMemories);
+    var updateResult = await updateMemoryRow(id, {
+      title: values.title,
+      category: values.category,
+      notes: values.notes,
+      importance: values.importance,
+      confidence_score: values.confidence_score,
+      tags: values.tags,
+      related_memory_ids: relatedIds
+    });
+
+    if (updateResult.error) {
+      throw updateResult.error;
+    }
+
+    return normalizeMemory(updateResult.data);
   }
 
   /**
@@ -251,22 +517,24 @@
   async function loadMemories(options) {
     var supabaseClient = getSupabaseClient();
     var settings = options || {};
-    var query = supabaseClient
-      .from(MEMORY_TABLE)
-      .select(MEMORY_COLUMNS)
-      .order("created_at", { ascending: false });
+    var result = await selectMemoryData(function (columns) {
+      var query = supabaseClient
+        .from(MEMORY_TABLE)
+        .select(columns)
+        .order("created_at", { ascending: false });
 
-    if (settings.limit) {
-      query = query.limit(settings.limit);
-    }
+      if (settings.limit) {
+        query = query.limit(settings.limit);
+      }
 
-    var result = await query;
+      return query;
+    });
 
     if (result.error) {
       throw result.error;
     }
 
-    return result.data || [];
+    return (result.data || []).map(normalizeMemory);
   }
 
   /**
@@ -274,18 +542,19 @@
    */
   async function getMemoryById(id) {
     var supabaseClient = getSupabaseClient();
-
-    var result = await supabaseClient
-      .from(MEMORY_TABLE)
-      .select(MEMORY_COLUMNS)
-      .eq("id", id)
-      .single();
+    var result = await selectMemoryData(function (columns) {
+      return supabaseClient
+        .from(MEMORY_TABLE)
+        .select(columns)
+        .eq("id", id)
+        .single();
+    });
 
     if (result.error) {
       throw result.error;
     }
 
-    return result.data;
+    return normalizeMemory(result.data);
   }
 
   /**
@@ -299,17 +568,18 @@
     }
 
     var supabaseClient = getSupabaseClient();
-
-    var result = await supabaseClient
-      .from(MEMORY_TABLE)
-      .select(MEMORY_COLUMNS)
-      .in("id", relatedIds);
+    var result = await selectMemoryData(function (columns) {
+      return supabaseClient
+        .from(MEMORY_TABLE)
+        .select(columns)
+        .in("id", relatedIds);
+    });
 
     if (result.error) {
       throw result.error;
     }
 
-    return result.data || [];
+    return (result.data || []).map(normalizeMemory);
   }
 
   /**
@@ -330,7 +600,8 @@
     }
 
     return filtered.filter(function (memory) {
-      var tagsText = (memory.tags || []).join(" ");
+      var tagsText = normalizeTags(memory.tags || []).join(" ");
+      var confidenceText = String(normalizeMemory(memory).confidence_score);
 
       return (
         (memory.title || "").toLowerCase().indexOf(normalizedQuery) !== -1 ||
@@ -338,7 +609,8 @@
         (memory.notes || "").toLowerCase().indexOf(normalizedQuery) !== -1 ||
         tagsText.toLowerCase().indexOf(normalizedQuery) !== -1 ||
         (memory.owner || "").toLowerCase().indexOf(normalizedQuery) !== -1 ||
-        (memory.importance || "").toLowerCase().indexOf(normalizedQuery) !== -1
+        (memory.importance || "").toLowerCase().indexOf(normalizedQuery) !== -1 ||
+        confidenceText.indexOf(normalizedQuery) !== -1
       );
     });
   }
@@ -346,10 +618,15 @@
   window.MemoryEngine = {
     DEFAULT_OWNER: DEFAULT_OWNER,
     CATEGORIES: ["All", "Strategy", "Learning", "Research", "Trading", "Operations", "Personal"],
+    normalizeTags: normalizeTags,
     generateTags: generateTags,
     calculateImportance: calculateImportance,
+    calculateConfidence: calculateConfidence,
+    getManualTags: getManualTags,
+    normalizeMemory: normalizeMemory,
     findRelatedMemoryIds: findRelatedMemoryIds,
     saveMemory: saveMemory,
+    updateMemory: updateMemory,
     loadMemories: loadMemories,
     getMemoryById: getMemoryById,
     loadRelatedMemories: loadRelatedMemories,
