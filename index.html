@@ -170,6 +170,9 @@
             <h1 class="page-header__title">Memory</h1>
             <p class="page-header__subtitle">Search and browse everything AlphaMind has saved.</p>
           </div>
+          <div class="page-header__actions">
+            <button class="btn btn--primary" id="btn-add-memory-page" type="button">Add Memory</button>
+          </div>
         </header>
 
         <section class="card memory-search" aria-label="Memory search">
@@ -211,6 +214,7 @@
       aria-modal="true"
     >
       <div class="memory-detail__header">
+        <button class="btn btn--secondary memory-detail__edit" type="button" id="btn-edit-memory">Edit Memory</button>
         <button class="memory-detail__close" type="button" id="memory-detail-close" aria-label="Close detail panel">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
             <path d="M1 1L13 13M13 1L1 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
@@ -222,6 +226,7 @@
           <span class="memory-detail__category" id="memory-detail-category"></span>
           <span class="memory-detail__owner" id="memory-detail-owner"></span>
           <span class="memory-detail__importance" id="memory-detail-importance"></span>
+          <span class="memory-detail__confidence" id="memory-detail-confidence"></span>
         </div>
         <h2 class="memory-detail__title" id="memory-detail-title"></h2>
         <p class="memory-detail__date" id="memory-detail-date"></p>
@@ -238,11 +243,11 @@
   <!-- Temporary notification toast -->
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
-  <!-- Add Memory modal -->
+  <!-- Create/Edit Memory modal -->
   <div class="modal-overlay" id="memory-modal" hidden>
     <div class="modal" role="dialog" aria-labelledby="modal-title" aria-modal="true">
       <h2 class="modal__title" id="modal-title">Add Memory</h2>
-      <p class="modal__subtitle">Save a note to the AlphaMind memory system.</p>
+      <p class="modal__subtitle" id="modal-subtitle">Save a note to the AlphaMind memory system.</p>
 
       <form id="memory-form" class="memory-form">
         <label class="form-field">
@@ -268,9 +273,15 @@
           <textarea class="form-field__input form-field__textarea" id="memory-notes" name="notes" rows="4" placeholder="Write your memory here..." required></textarea>
         </label>
 
+        <label class="form-field">
+          <span class="form-field__label">Tags</span>
+          <input class="form-field__input" type="text" id="memory-tags" name="tags" placeholder="e.g. strategy, q3, decision">
+          <span class="form-field__hint">Separate tags with commas. AlphaMind also adds relevant automatic tags.</span>
+        </label>
+
         <div class="modal__actions">
           <button class="btn btn--secondary" type="button" id="btn-cancel-memory">Cancel</button>
-          <button class="btn btn--primary" type="submit">Save</button>
+          <button class="btn btn--primary" type="submit" id="btn-save-memory">Save</button>
         </div>
       </form>
     </div>
