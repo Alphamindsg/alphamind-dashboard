@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AlphaMind OS</title>
+  <title>AlphaMind CEO Command Center</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -16,22 +16,15 @@
       <div class="sidebar__brand">
         <div class="sidebar__logo" aria-hidden="true">α</div>
         <div>
-          <p class="sidebar__name">AlphaMind AI</p>
-          <p class="sidebar__tagline">Operating System</p>
+          <p class="sidebar__name">AlphaMind</p>
+          <p class="sidebar__tagline">CEO Command Center</p>
         </div>
       </div>
 
       <nav class="sidebar__nav">
         <ul class="sidebar__list">
-          <li><button class="sidebar__link sidebar__link--active" data-nav="dashboard">Dashboard</button></li>
+          <li><button class="sidebar__link sidebar__link--active" data-nav="dashboard">Command Center</button></li>
           <li><button class="sidebar__link" data-nav="memory">Memory</button></li>
-          <li><button class="sidebar__link" data-nav="learning">Learning</button></li>
-          <li><button class="sidebar__link" data-nav="research">Research</button></li>
-          <li><button class="sidebar__link" data-nav="trading">Trading</button></li>
-          <li><button class="sidebar__link" data-nav="virtual-influencer">Virtual Influencer</button></li>
-          <li><button class="sidebar__link" data-nav="financial-education">Financial Education</button></li>
-          <li><button class="sidebar__link" data-nav="ai-employees">AI Employees</button></li>
-          <li><button class="sidebar__link" data-nav="settings">Settings</button></li>
         </ul>
       </nav>
     </aside>
@@ -39,126 +32,100 @@
     <!-- Main content area -->
     <main class="main">
 
-      <!-- Dashboard page -->
+      <!-- CEO Command Center page -->
       <div id="page-dashboard" class="page-view">
 
-      <!-- Page header with greeting and date -->
-      <header class="page-header">
-        <div>
-          <h1 class="page-header__title">Good morning, Lim</h1>
-          <p class="page-header__subtitle">Here is what AlphaMind is working on today.</p>
+        <header class="command-header">
+          <div>
+            <p class="command-header__eyebrow">CEO Command Center</p>
+            <h1 class="command-header__title">Good Morning Lim</h1>
+            <p class="command-header__subtitle">Priorities, decisions, knowledge, and company state.</p>
+          </div>
+          <div class="command-header__clock">
+            <p class="command-header__time" id="current-time"></p>
+            <p class="command-header__date" id="current-date"></p>
+          </div>
+        </header>
+
+        <section class="card command-section command-section--focus" aria-labelledby="focus-title">
+          <div class="command-section__header">
+            <div>
+              <p class="command-section__label">Attention</p>
+              <h2 class="command-section__title" id="focus-title">Today's Focus</h2>
+            </div>
+            <span class="command-section__limit">Maximum 3</span>
+          </div>
+          <div id="today-focus-list" class="command-list command-list--focus" aria-live="polite"></div>
+        </section>
+
+        <div class="command-grid">
+          <section class="card command-section" aria-labelledby="waiting-title">
+            <div class="command-section__header">
+              <div>
+                <p class="command-section__label">Attention</p>
+                <h2 class="command-section__title" id="waiting-title">Waiting For CEO</h2>
+              </div>
+            </div>
+            <div id="waiting-ceo-list" class="command-list" aria-live="polite"></div>
+          </section>
+
+          <section class="card command-section" aria-labelledby="knowledge-title">
+            <div class="command-section__header">
+              <div>
+                <p class="command-section__label">Knowledge</p>
+                <h2 class="command-section__title" id="knowledge-title">Recent Knowledge</h2>
+              </div>
+              <button class="text-action" type="button" id="btn-open-memory">View Memory</button>
+            </div>
+            <div id="recent-knowledge-list" class="command-list" aria-live="polite"></div>
+          </section>
         </div>
-        <p class="page-header__date" id="current-date" aria-live="polite"></p>
-      </header>
 
-      <!-- AI employee and module summary cards -->
-      <section class="summary-cards" aria-label="System summary">
-        <article class="card summary-card">
-          <div class="summary-card__header">
-            <h2 class="summary-card__title">Athena</h2>
-            <span class="badge badge--ready">Ready</span>
+        <section class="card command-section command-capture" aria-labelledby="quick-capture-title">
+          <div class="command-section__header">
+            <div>
+              <p class="command-section__label">Under 10 seconds</p>
+              <h2 class="command-section__title" id="quick-capture-title">Quick Capture</h2>
+            </div>
           </div>
-          <p class="summary-card__role">Chief Knowledge Officer</p>
-          <p class="summary-card__message">Memory system available</p>
-        </article>
-
-        <article class="card summary-card">
-          <div class="summary-card__header">
-            <h2 class="summary-card__title">Atlas</h2>
-            <span class="badge badge--waiting">Waiting</span>
-          </div>
-          <p class="summary-card__role">Chief Learning Officer</p>
-          <p class="summary-card__message">No learning report yet</p>
-        </article>
-
-        <article class="card summary-card">
-          <div class="summary-card__header">
-            <h2 class="summary-card__title">Market</h2>
-            <span class="badge badge--monitoring">Monitoring</span>
-          </div>
-          <p class="summary-card__message">Research module not connected</p>
-        </article>
-
-        <article class="card summary-card">
-          <div class="summary-card__header">
-            <h2 class="summary-card__title">Creator</h2>
-            <span class="badge badge--waiting">Waiting</span>
-          </div>
-          <p class="summary-card__message">Virtual influencer module not connected</p>
-        </article>
-      </section>
-
-      <!-- Two-column content grid -->
-      <div class="content-grid">
-
-        <!-- Today's CEO Tasks -->
-        <section class="card section-card">
-          <h2 class="section-card__title">Today's CEO Tasks</h2>
-          <ul class="task-list">
-            <li class="task-list__item">
-              <span class="task-list__dot" aria-hidden="true"></span>
-              Review AlphaMind roadmap
-            </li>
-            <li class="task-list__item">
-              <span class="task-list__dot" aria-hidden="true"></span>
-              Check memory system
-            </li>
-            <li class="task-list__item">
-              <span class="task-list__dot" aria-hidden="true"></span>
-              Prepare first learning workflow
-            </li>
-          </ul>
+          <form id="quick-capture-form" class="quick-capture-form">
+            <label class="sr-only" for="quick-capture-input">Capture knowledge</label>
+            <input
+              class="quick-capture-form__input"
+              id="quick-capture-input"
+              name="quick-capture"
+              type="text"
+              maxlength="500"
+              placeholder="Capture knowledge, an observation, or decision context..."
+              autocomplete="off"
+              required
+            >
+            <button class="btn btn--primary" id="btn-quick-capture" type="submit">Capture</button>
+          </form>
+          <p class="quick-capture-form__hint">Saved to Memory using the existing workflow. Edit details later from Memory.</p>
         </section>
 
-        <!-- Recent Learning -->
-        <section class="card section-card">
-          <h2 class="section-card__title">Recent Learning</h2>
-          <div class="empty-state">
-            <p class="empty-state__title">No learning reports yet</p>
-            <p class="empty-state__text">Atlas will surface insights here once the learning workflow is connected.</p>
-          </div>
-        </section>
+        <div class="command-grid command-grid--lower">
+          <section class="card command-section" aria-labelledby="progress-title">
+            <div class="command-section__header">
+              <div>
+                <p class="command-section__label">Evidence</p>
+                <h2 class="command-section__title" id="progress-title">Today's Progress</h2>
+              </div>
+            </div>
+            <div id="today-progress-list" class="command-list" aria-live="polite"></div>
+          </section>
 
-        <!-- Company Health -->
-        <section class="card section-card">
-          <h2 class="section-card__title">Company Health</h2>
-          <ul class="health-list">
-            <li class="health-list__item">
-              <span>Memory</span>
-              <span class="health-list__status health-list__status--good">Available</span>
-            </li>
-            <li class="health-list__item">
-              <span>Learning</span>
-              <span class="health-list__status health-list__status--pending">Pending</span>
-            </li>
-            <li class="health-list__item">
-              <span>Research</span>
-              <span class="health-list__status health-list__status--pending">Not connected</span>
-            </li>
-            <li class="health-list__item">
-              <span>Trading</span>
-              <span class="health-list__status health-list__status--pending">Not connected</span>
-            </li>
-          </ul>
-        </section>
-
-        <!-- Quick Actions -->
-        <section class="card section-card">
-          <h2 class="section-card__title">Quick Actions</h2>
-          <div class="quick-actions">
-            <button class="btn btn--primary" id="btn-add-memory" type="button">Add Memory</button>
-            <button class="btn btn--secondary" id="btn-review-learning" type="button">Review Learning</button>
-            <button class="btn btn--secondary" id="btn-view-employees" type="button">View AI Employees</button>
-          </div>
-        </section>
-
-        <!-- Recent Memory (populated by JavaScript) -->
-        <section class="card section-card section-card--wide">
-          <h2 class="section-card__title">Recent Memory</h2>
-          <div id="recent-memory-list" class="memory-list" aria-live="polite"></div>
-        </section>
-
-      </div>
+          <section class="card command-section" aria-labelledby="pulse-title">
+            <div class="command-section__header">
+              <div>
+                <p class="command-section__label">Manual status</p>
+                <h2 class="command-section__title" id="pulse-title">System Pulse</h2>
+              </div>
+            </div>
+            <div id="system-pulse-list" class="pulse-list" aria-live="polite"></div>
+          </section>
+        </div>
 
       </div><!-- /page-dashboard -->
 

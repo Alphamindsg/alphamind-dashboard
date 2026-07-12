@@ -1,6 +1,6 @@
 /**
- * AlphaMind OS — Main application logic
- * Handles navigation, UI, and delegates memory operations to Memory Engine v2.
+ * AlphaMind CEO Command Center — Main application logic
+ * Handles the Command Center, navigation, and existing Memory MVP workflows.
  */
 
 var memoryPageState = {
@@ -16,6 +16,24 @@ var memoryUiState = {
 };
 
 var isSavingMemory = false;
+var isQuickCapturing = false;
+
+var COMMAND_CENTER_CONFIG = {
+  focusTags: ["focus-1", "focus-2", "focus-3"],
+  waitingTag: "waiting-ceo",
+  progressTags: ["completed", "done"],
+  waitingLimit: 5,
+  recentKnowledgeLimit: 5,
+  progressLimit: 5,
+  quickCaptureCategory: "Learning",
+  quickCaptureTag: "quick-capture",
+  systemPulse: [
+    { name: "Memory", status: "Healthy" },
+    { name: "Engineering", status: "Healthy" },
+    { name: "Research", status: "Learning" },
+    { name: "Creator Studio", status: "Planning" }
+  ]
+};
 
 var IMPORTANCE_CLASS_ALLOWLIST = ["low", "medium", "high", "critical"];
 
@@ -26,19 +44,22 @@ function normalizeImportanceClass(value) {
 }
 
 document.addEventListener("DOMContentLoaded", function () {
-  displayCurrentDate();
+  displayCurrentDateTime();
+  window.setInterval(displayCurrentDateTime, 30000);
   setupSidebarNavigation();
-  setupQuickActions();
+  setupCommandCenterActions();
   setupMemoryModal();
   setupMemoryPage();
   setupMemoryDetailPanel();
-  renderRecentMemories();
+  renderSystemPulse();
+  loadCommandCenter();
 });
 
-function displayCurrentDate() {
+function displayCurrentDateTime() {
   var dateElement = document.getElementById("current-date");
+  var timeElement = document.getElementById("current-time");
 
-  if (!dateElement) {
+  if (!dateElement && !timeElement) {
     return;
   }
 
@@ -50,7 +71,16 @@ function displayCurrentDate() {
     day: "numeric"
   };
 
-  dateElement.textContent = today.toLocaleDateString("en-US", options);
+  if (dateElement) {
+    dateElement.textContent = today.toLocaleDateString("en-US", options);
+  }
+
+  if (timeElement) {
+    timeElement.textContent = today.toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit"
+    });
+  }
 }
 
 function setupSidebarNavigation() {
@@ -63,6 +93,7 @@ function setupSidebarNavigation() {
       if (navTarget === "dashboard") {
         setActiveSidebarLink(sidebarLinks, link);
         showPage("dashboard");
+        loadCommandCenter();
         return;
       }
 
@@ -72,8 +103,6 @@ function setupSidebarNavigation() {
         loadMemoryPage();
         return;
       }
-
-      showToast(getComingSoonMessage(navTarget));
     });
   });
 }
@@ -84,20 +113,6 @@ function setActiveSidebarLink(sidebarLinks, activeLink) {
   });
 
   activeLink.classList.add("sidebar__link--active");
-}
-
-function getComingSoonMessage(navTarget) {
-  var messages = {
-    learning: "Learning module is not connected yet. Atlas will be ready soon.",
-    research: "Research module is coming in a future update.",
-    trading: "Trading module is coming in a future update.",
-    "virtual-influencer": "Virtual Influencer module is coming in a future update.",
-    "financial-education": "Financial Education module is coming in a future update.",
-    "ai-employees": "AI Employees view is coming in a future update.",
-    settings: "Settings are coming in a future update."
-  };
-
-  return messages[navTarget] || "This module is coming in a future update.";
 }
 
 function showPage(pageName) {
@@ -113,31 +128,390 @@ function showPage(pageName) {
   }
 }
 
-function setupQuickActions() {
-  var addMemoryButton = document.getElementById("btn-add-memory");
+function setupCommandCenterActions() {
+  var quickCaptureForm = document.getElementById("quick-capture-form");
+  var openMemoryButton = document.getElementById("btn-open-memory");
   var addMemoryPageButton = document.getElementById("btn-add-memory-page");
-  var reviewLearningButton = document.getElementById("btn-review-learning");
-  var viewEmployeesButton = document.getElementById("btn-view-employees");
-
-  if (addMemoryButton) {
-    addMemoryButton.addEventListener("click", openCreateMemoryModal);
-  }
 
   if (addMemoryPageButton) {
     addMemoryPageButton.addEventListener("click", openCreateMemoryModal);
   }
 
-  if (reviewLearningButton) {
-    reviewLearningButton.addEventListener("click", function () {
-      showToast("Learning module is not connected yet. Atlas will be ready soon.");
-    });
+  if (openMemoryButton) {
+    openMemoryButton.addEventListener("click", navigateToMemory);
   }
 
-  if (viewEmployeesButton) {
-    viewEmployeesButton.addEventListener("click", function () {
-      showToast("AI Employees view is coming in a future update.");
+  if (quickCaptureForm) {
+    quickCaptureForm.addEventListener("submit", async function (event) {
+      event.preventDefault();
+      await saveQuickCapture();
     });
   }
+}
+
+function navigateToMemory() {
+  var sidebarLinks = document.querySelectorAll(".sidebar__link");
+  var memoryLink = document.querySelector('.sidebar__link[data-nav="memory"]');
+
+  if (memoryLink) {
+    setActiveSidebarLink(sidebarLinks, memoryLink);
+  }
+
+  showPage("memory");
+  loadMemoryPage();
+}
+
+function getNormalizedMemoryTags(memory) {
+  if (window.MemoryEngine && typeof MemoryEngine.normalizeTags === "function") {
+    return Array.from(MemoryEngine.normalizeTags((memory && memory.tags) || []));
+  }
+
+  return Array.isArray(memory && memory.tags)
+    ? memory.tags.map(function (tag) {
+        return String(tag || "").toLowerCase().trim();
+      })
+    : [];
+}
+
+function memoryHasTag(memory, tag) {
+  return getNormalizedMemoryTags(memory).indexOf(tag) !== -1;
+}
+
+function getMemoryTime(memory) {
+  var value = (memory && (memory.updated_at || memory.created_at)) || "";
+  var time = Date.parse(value);
+
+  return Number.isFinite(time) ? time : 0;
+}
+
+function sortByMemoryTimeDescending(memories) {
+  return memories.slice().sort(function (left, right) {
+    return getMemoryTime(right) - getMemoryTime(left);
+  });
+}
+
+function selectFocusMemories(memories) {
+  var selected = [];
+  var usedIds = Object.create(null);
+
+  COMMAND_CENTER_CONFIG.focusTags.forEach(function (focusTag, focusIndex) {
+    var match = sortByMemoryTimeDescending(
+      memories.filter(function (memory) {
+        return !usedIds[memory.id] && memoryHasTag(memory, focusTag);
+      })
+    )[0];
+
+    if (match) {
+      selected.push(
+        Object.assign({}, match, {
+          command_center_focus_position: focusIndex + 1
+        })
+      );
+      usedIds[match.id] = true;
+    }
+  });
+
+  return selected.slice(0, 3);
+}
+
+function selectWaitingForCeoMemories(memories) {
+  return sortByMemoryTimeDescending(
+    memories.filter(function (memory) {
+      return memoryHasTag(memory, COMMAND_CENTER_CONFIG.waitingTag);
+    })
+  ).slice(0, COMMAND_CENTER_CONFIG.waitingLimit);
+}
+
+function selectProgressMemories(memories) {
+  return sortByMemoryTimeDescending(
+    memories.filter(function (memory) {
+      return COMMAND_CENTER_CONFIG.progressTags.some(function (tag) {
+        return memoryHasTag(memory, tag);
+      });
+    })
+  ).slice(0, COMMAND_CENTER_CONFIG.progressLimit);
+}
+
+function selectRecentKnowledge(memories, excludedMemories) {
+  var excludedIds = Object.create(null);
+  var importanceRank = { Critical: 4, High: 3, Medium: 2, Low: 1 };
+
+  (excludedMemories || []).forEach(function (memory) {
+    excludedIds[memory.id] = true;
+  });
+
+  return memories
+    .filter(function (memory) {
+      return !excludedIds[memory.id];
+    })
+    .sort(function (left, right) {
+      var leftRank = importanceRank[left.importance] || 0;
+      var rightRank = importanceRank[right.importance] || 0;
+
+      if (leftRank !== rightRank) {
+        return rightRank - leftRank;
+      }
+
+      return getMemoryTime(right) - getMemoryTime(left);
+    })
+    .slice(0, COMMAND_CENTER_CONFIG.recentKnowledgeLimit);
+}
+
+function getWaitingReason(memory) {
+  var tags = getNormalizedMemoryTags(memory);
+  var reasons = [
+    { tag: "pr-approval", label: "PR approval" },
+    { tag: "executive-decision", label: "Executive decision" },
+    { tag: "review", label: "Review" },
+    { tag: "outstanding-action", label: "Outstanding action" }
+  ];
+  var match = reasons.find(function (reason) {
+    return tags.indexOf(reason.tag) !== -1;
+  });
+
+  return match ? match.label : "CEO attention";
+}
+
+function createQuickCaptureTitle(text) {
+  var normalized = String(text || "").trim().replace(/\s+/g, " ");
+  var firstSentence = normalized.split(/[.!?](?:\s|$)/)[0] || normalized;
+  var title = firstSentence.slice(0, 72).trim();
+
+  if (firstSentence.length > 72) {
+    title = title.replace(/\s+\S*$/, "").trim() || firstSentence.slice(0, 72).trim();
+  }
+
+  return title || "Quick capture";
+}
+
+async function saveQuickCapture() {
+  var input = document.getElementById("quick-capture-input");
+  var button = document.getElementById("btn-quick-capture");
+  var text = input ? input.value.trim() : "";
+
+  if (!text || isQuickCapturing || !window.MemoryEngine) {
+    return;
+  }
+
+  isQuickCapturing = true;
+
+  try {
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Capturing...";
+    }
+
+    await MemoryEngine.saveMemory({
+      title: createQuickCaptureTitle(text),
+      category: COMMAND_CENTER_CONFIG.quickCaptureCategory,
+      notes: text,
+      tags: COMMAND_CENTER_CONFIG.quickCaptureTag,
+      source: "command-center"
+    });
+
+    input.value = "";
+    await loadCommandCenter();
+    showToast("Knowledge captured");
+    input.focus();
+  } catch (error) {
+    console.error("Failed to capture knowledge:", error);
+    showToast("Could not capture knowledge. Check your Supabase settings.");
+  } finally {
+    isQuickCapturing = false;
+
+    if (button) {
+      button.disabled = false;
+      button.textContent = "Capture";
+    }
+  }
+}
+
+async function loadCommandCenter() {
+  var containerIds = [
+    "today-focus-list",
+    "waiting-ceo-list",
+    "recent-knowledge-list",
+    "today-progress-list"
+  ];
+  var containers = containerIds
+    .map(function (id) {
+      return document.getElementById(id);
+    })
+    .filter(Boolean);
+
+  if (!containers.length) {
+    return;
+  }
+
+  containers.forEach(function (container) {
+    container.innerHTML = getLoadingStateHtml("Loading...", "Reading existing Memory records.");
+  });
+
+  if (!window.MemoryEngine) {
+    containers.forEach(function (container) {
+      container.innerHTML = getErrorStateHtml("Memory unavailable", "The existing Memory engine did not load.");
+    });
+    return;
+  }
+
+  try {
+    var memories = await MemoryEngine.loadMemories({ limit: 200 });
+    var focusMemories = selectFocusMemories(memories);
+    var waitingMemories = selectWaitingForCeoMemories(memories);
+    var progressMemories = selectProgressMemories(memories);
+    var recentKnowledge = selectRecentKnowledge(
+      memories,
+      focusMemories.concat(waitingMemories, progressMemories)
+    );
+
+    renderCommandList("today-focus-list", focusMemories, {
+      emptyTitle: "No focus items selected",
+      emptyText: "Add focus-1, focus-2, or focus-3 to existing Memory records.",
+      kind: "focus"
+    });
+    renderCommandList("waiting-ceo-list", waitingMemories, {
+      emptyTitle: "Nothing is waiting",
+      emptyText: "Existing records tagged waiting-ceo will appear here.",
+      kind: "waiting"
+    });
+    renderCommandList("recent-knowledge-list", recentKnowledge, {
+      emptyTitle: "No recent knowledge",
+      emptyText: "Create or update a Memory record to see it here.",
+      kind: "knowledge"
+    });
+    renderCommandList("today-progress-list", progressMemories, {
+      emptyTitle: "No completed actions recorded",
+      emptyText: "Existing records tagged completed or done will appear here.",
+      kind: "progress"
+    });
+  } catch (error) {
+    console.error("Failed to load CEO Command Center:", error);
+    containers.forEach(function (container) {
+      container.innerHTML = getErrorStateHtml(
+        "Could not load Command Center data",
+        "Check the existing Supabase URL, publishable key, and table permissions."
+      );
+    });
+  }
+}
+
+function renderCommandList(containerId, memories, options) {
+  var container = document.getElementById(containerId);
+  var settings = options || {};
+
+  if (!container) {
+    return;
+  }
+
+  container.innerHTML = "";
+
+  if (!memories.length) {
+    container.innerHTML = getEmptyStateHtml(settings.emptyTitle, settings.emptyText);
+    return;
+  }
+
+  memories.forEach(function (memory, index) {
+    container.appendChild(createCommandItem(memory, settings.kind, index));
+  });
+}
+
+function createCommandItem(memory, kind, index) {
+  var button = document.createElement("button");
+  var header = document.createElement("span");
+  var badge = document.createElement("span");
+  var title = document.createElement("span");
+  var notes = document.createElement("span");
+  var footer = document.createElement("span");
+  var category = document.createElement("span");
+  var importance = document.createElement("span");
+  var date = document.createElement("span");
+
+  button.type = "button";
+  button.className = "command-item command-item--" + (kind || "knowledge");
+  button.addEventListener("click", function () {
+    openMemoryDetail(memory.id);
+  });
+
+  header.className = "command-item__header";
+  badge.className = "command-item__badge";
+  badge.textContent = getCommandItemBadge(memory, kind, index);
+  title.className = "command-item__title";
+  title.textContent = memory.title || "Untitled memory";
+  header.appendChild(badge);
+  header.appendChild(title);
+
+  notes.className = "command-item__notes";
+  notes.textContent = truncateText(memory.notes || "", 120);
+
+  footer.className = "command-item__footer";
+  category.className = "command-item__category";
+  category.textContent = memory.category || "Uncategorized";
+  importance.className =
+    "command-item__importance command-item__importance--" +
+    normalizeImportanceClass(memory.importance);
+  importance.textContent = memory.importance || "Medium";
+  date.className = "command-item__date";
+  date.textContent = formatMemoryDate(memory.updated_at || memory.created_at);
+  footer.appendChild(category);
+  footer.appendChild(importance);
+  footer.appendChild(date);
+
+  button.appendChild(header);
+  button.appendChild(notes);
+  button.appendChild(footer);
+
+  return button;
+}
+
+function getCommandItemBadge(memory, kind, index) {
+  if (kind === "focus") {
+    return String(memory.command_center_focus_position || index + 1);
+  }
+
+  if (kind === "waiting") {
+    return getWaitingReason(memory);
+  }
+
+  if (kind === "progress") {
+    return "Completed";
+  }
+
+  return "Knowledge";
+}
+
+function truncateText(text, maximumLength) {
+  var normalized = String(text || "").trim().replace(/\s+/g, " ");
+
+  if (normalized.length <= maximumLength) {
+    return normalized;
+  }
+
+  return normalized.slice(0, maximumLength - 1).trimEnd() + "…";
+}
+
+function renderSystemPulse() {
+  var container = document.getElementById("system-pulse-list");
+
+  if (!container) {
+    return;
+  }
+
+  container.innerHTML = "";
+
+  COMMAND_CENTER_CONFIG.systemPulse.forEach(function (item) {
+    var row = document.createElement("div");
+    var name = document.createElement("span");
+    var status = document.createElement("span");
+
+    row.className = "pulse-item";
+    name.className = "pulse-item__name";
+    name.textContent = item.name;
+    status.className = "pulse-item__status pulse-item__status--" + item.status.toLowerCase();
+    status.textContent = item.status;
+    row.appendChild(name);
+    row.appendChild(status);
+    container.appendChild(row);
+  });
 }
 
 function setupMemoryModal() {
@@ -342,7 +716,7 @@ async function saveMemoryFromForm(form) {
       : await MemoryEngine.saveMemory(input);
 
     closeMemoryModal();
-    await renderRecentMemories();
+    await loadCommandCenter();
 
     var memoryPage = document.getElementById("page-memory");
     if (memoryPage && !memoryPage.hidden) {
@@ -436,40 +810,6 @@ function renderMemorySearchResults() {
   results.forEach(function (memory) {
     resultsContainer.appendChild(createMemoryCard(memory, { preview: true }));
   });
-}
-
-async function renderRecentMemories() {
-  var container = document.getElementById("recent-memory-list");
-
-  if (!container) {
-    return;
-  }
-
-  container.innerHTML = getLoadingStateHtml("Loading memories...", "Fetching the latest notes from Supabase.");
-
-  try {
-    var memories = await MemoryEngine.loadMemories({ limit: 20 });
-    container.innerHTML = "";
-
-    if (memories.length === 0) {
-      container.innerHTML = getEmptyStateHtml(
-        "No memories saved yet",
-        "Use the Add Memory button to capture your first note."
-      );
-      return;
-    }
-
-    memories.forEach(function (memory) {
-      container.appendChild(createMemoryCard(memory, { preview: false }));
-    });
-  } catch (error) {
-    console.error("Failed to load memories:", error);
-    container.innerHTML = getErrorStateHtml(
-      "Could not load memories",
-      "Check your Supabase URL, publishable key, and table permissions."
-    );
-    showToast("Could not load memories. Check your Supabase settings.");
-  }
 }
 
 function createMemoryCard(memory, options) {
