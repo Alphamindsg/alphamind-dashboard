@@ -40,14 +40,6 @@ CREATE INDEX IF NOT EXISTS idx_company_memories_owner
 
 Existing rows receive safe defaults. No data is deleted.
 
-### Optional MEM-001 confidence migration
-
-The MVP works before this migration by calculating confidence in the browser. To persist confidence for new and edited memories, review:
-
-`supabase/migrations/202607120126_mem_001_confidence_score.sql`
-
-Do not apply it without explicit approval for the exact Supabase environment. It adds one nullable `confidence_score` column with a 0–100 check constraint and does not modify RLS or existing memory values.
-
 ### Security warning
 
 Use only the **Project URL** and **Publishable (anon) key** in `supabase-config.js`.
@@ -99,6 +91,7 @@ If something fails, open the browser developer console (**F12 → Console**) for
 
 ## MEM-001 screenshots
 
+- [Create Memory form](docs/screenshots/memory-mvp-create.png)
 - [Memory list with importance and confidence](docs/screenshots/memory-mvp-list.png)
 - [Filtered memory search](docs/screenshots/memory-mvp-search.png)
 - [Memory detail with tags and related memories](docs/screenshots/memory-mvp-detail.png)
@@ -115,10 +108,10 @@ If something fails, open the browser developer console (**F12 → Console**) for
 | `memory-engine.js` | Memory MVP engine: create, edit, load, search, tags, confidence, importance, related memories, and schema fallback |
 | `app.js` | UI wiring: create/edit form, navigation, search, filters, detail panel, toast notifications |
 | `memory-mvp-regression-checks.js` | Dependency-free regression checks for create, edit, tags, confidence, search, relations, and legacy schema fallback |
-| `docs/MEM-001-architecture.md` | MVP architecture, migration plan, security notes, limitations, and rollback plan |
+| `docs/MEM-001-architecture.md` | MVP architecture, database impact, security notes, limitations, and rollback plan |
+| `docs/MEM-001-acceptance-test.md` | Reproducible manual create/refresh/edit/search/detail acceptance protocol and execution record |
 | `docs/MEM-001-user-guide.md` | Daily CEO workflow for creating, searching, editing, tagging, and retrieving memories |
-| `docs/MEM-001-test-report.md` | Syntax, regression, browser-flow, search-performance, and screenshot evidence |
-| `supabase/migrations/202607120126_mem_001_confidence_score.sql` | Proposed optional confidence persistence migration; not applied automatically |
+| `docs/MEM-001-test-report.md` | Syntax, regression, manual acceptance status, and screenshot evidence |
 | `README.md` | This documentation file |
 
 ## What works in this prototype
@@ -175,17 +168,16 @@ If something fails, open the browser developer console (**F12 → Console**) for
 alphamind-dashboard/
 ├── docs/
 │   ├── screenshots/
+│   │   ├── memory-mvp-create.png
 │   │   ├── memory-mvp-detail.png
 │   │   ├── memory-mvp-edit.png
 │   │   ├── memory-mvp-list.png
 │   │   ├── memory-mvp-search.png
 │   │   └── memory-mvp-updated.png
+│   ├── MEM-001-acceptance-test.md
 │   ├── MEM-001-architecture.md
 │   ├── MEM-001-test-report.md
 │   └── MEM-001-user-guide.md
-├── supabase/
-│   └── migrations/
-│       └── 202607120126_mem_001_confidence_score.sql
 ├── index.html
 ├── styles.css
 ├── supabase-config.js

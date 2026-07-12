@@ -26,54 +26,39 @@ The browser remains an untrusted client. Supabase RLS and trusted database confi
 - **Importance:** Retains the existing Low/Medium/High/Critical rule-based classification.
 - **Related memories:** Selects up to three records using shared category and tag overlap.
 
-## Backward-compatible confidence
+## Legacy-schema confidence
 
-The engine first checks whether `confidence_score` is available. If the column does not exist, it retries legacy queries without that column and calculates confidence in the browser. This allows create, edit, search, and view to work before the optional migration is approved.
+The MVP uses the current `company_memories` schema. Confidence is derived in the browser from memory content and tags. The engine remains tolerant of a future `confidence_score` column, but this PR contains no schema artifact and requires no database migration.
 
-When the column exists, new and edited records persist the calculated score. Existing rows with `NULL` confidence continue to receive a derived score when loaded.
+## Database impact
 
-## Proposed database change
+- No schema artifact remains in this PR.
+- No migration was applied.
+- No RLS, policy, key, authentication, or production-data change occurred.
+- No database action is required to merge or evaluate this application change.
 
-Migration file:
-
-`supabase/migrations/202607120126_mem_001_confidence_score.sql`
-
-It proposes one nullable `smallint` column with a 0–100 check constraint. It does not alter RLS, policies, keys, authentication, existing memory values, or ownership.
-
-The migration is a proposal only and has not been executed.
-
-## Migration plan
-
-1. Review the migration and confirm the target Supabase environment.
-2. Obtain explicit CTO and CEO approval for that environment and operation.
-3. Record a backup/recovery checkpoint appropriate to the environment.
-4. Apply the additive migration.
-5. Verify the column and check constraint.
-6. Create a test memory and confirm confidence persistence.
-7. Edit the memory and confirm the score updates.
-8. Verify existing rows with `NULL` scores still display a derived score.
-9. Confirm RLS behavior is unchanged for SELECT, INSERT, and UPDATE.
-
-Because the application has a legacy-schema fallback, migration failure should not block the other MVP features.
+Any future confidence persistence must be proposed in a separate database-specific task or PR with environment-specific approval and authorization testing.
 
 ## Rollback plan
 
-### Application rollback
+**Rollback trigger:** create/edit/search failure, incorrect memory mutation, severe UI regression, or a security finding that makes controlled evaluation unsafe.
 
-1. Stop further rollout or testing.
-2. Revert the MEM-001 application commit.
-3. Re-run JavaScript syntax and existing security regression checks.
-4. Verify legacy create, view, search, importance, tags, and related-memory behavior.
-5. Record the issue and reopen the task with evidence.
+**Authorized owner:** CTO-approved repository maintainer. Production rollback deployment, if ever applicable, still requires the normal CEO deployment gate.
 
-### Database rollback
+**Expected recovery time:** approximately 15 minutes for a Git revert and static validation, excluding review or deployment time.
 
-The safest immediate rollback is to leave the additive nullable column in place because older code ignores it. Dropping the column is destructive and requires separate approval. If removal is approved:
+**Steps:**
 
-1. Confirm no deployed code depends on `confidence_score`.
-2. Export or otherwise preserve needed confidence values.
-3. Drop the check constraint and column in the approved environment.
-4. Verify existing memory data and RLS behavior.
+1. Stop controlled evaluation and preserve the failing record, console output, and reproduction steps without exposing sensitive data.
+2. Revert the MEM-001 application commit through a feature branch and pull request.
+3. Run JavaScript syntax checks, `memory-mvp-regression-checks.js`, and `security-regression-checks.js`.
+4. Verify the previous create, view, search, importance, tags, and related-memory behavior using the acceptance protocol.
+5. Confirm the resulting commit and scope before any deployment approval is requested.
+6. Record the issue, impact, and follow-up owner.
+
+**Post-rollback verification:** the dashboard loads, existing memories remain readable, legacy create/search/view flows work, no new console error appears, and no database/RLS state changed.
+
+**Rehearsal status:** this rollback has not yet been rehearsed against an authorized shared or production-connected environment.
 
 ## Security and privacy
 

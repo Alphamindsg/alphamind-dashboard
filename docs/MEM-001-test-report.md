@@ -1,89 +1,93 @@
-# MEM-001 — Test Report
+# MEM-001 — Test and Evidence Report
 
-## Scope
+## Scope and risk
 
-Validation covered the approved Memory MVP only:
+Risk classification: **Medium**.
 
-- create;
-- edit;
-- search and retrieve;
+Validation covers the approved application scope only:
+
+- create and edit logic;
+- client-side search and retrieval;
 - manual and automatic tags;
-- confidence;
-- importance;
+- confidence and importance;
 - simple related memories;
-- compatibility when the optional confidence column is absent.
+- legacy-schema compatibility.
 
-No live Supabase records, schema, RLS, policies, keys, or production data were changed during testing.
+No Supabase schema artifact remains in this PR. No migration, RLS, policy, key, authentication, production-data, deployment, or production test action occurred.
 
-## Static and regression checks
+## Reproducible static and regression checks
 
-Commands:
+Run from the repository root:
 
-```text
-node --check <every JavaScript file>
+```sh
+for file in *.js; do node --check "$file"; done
 node memory-mvp-regression-checks.js
 node security-regression-checks.js
 ```
 
-Results:
+Recorded result on the PR head:
 
 - JavaScript syntax checks: passed.
 - Memory MVP regression checks: passed.
 - Existing frontend security regression checks: passed.
+- `git diff --check`: passed.
 
-The Memory MVP regression suite verifies:
+The regression suite covers:
 
 - tag normalization and deduplication;
 - user and automatic tag merging;
-- confidence scoring bounds and evidence behavior;
-- derived confidence for migrated rows whose persisted score is `NULL`;
+- confidence bounds and evidence behavior;
+- derived confidence for `NULL` or absent persisted values;
 - related-memory ranking and self-exclusion;
-- create and edit persistence through a Supabase-compatible mock;
+- create and edit behavior through a Supabase-compatible mock;
 - search by content, tags, and confidence;
-- optional confidence-column persistence;
-- legacy schema fallback when `confidence_score` is unavailable;
-- removal of obsolete automatic tags when edited content/category changes;
+- legacy schema fallback;
+- removal of obsolete derived tags after edit;
 - required edit, tag, and confidence UI controls.
 
-## Browser workflow
+## Manual acceptance protocol
 
-A local HTTP server and in-memory Supabase-compatible test adapter were used. The production Supabase configuration was not loaded.
+The reproducible human procedure is documented in [MEM-001 Manual Acceptance Test Protocol](MEM-001-acceptance-test.md).
 
-Automated flow:
+Current status:
 
-1. Load four seeded memories.
-2. Verify memory cards show importance and confidence.
-3. Create a new Strategy memory with manual tags.
-4. Confirm automatic metadata and related-memory links.
-5. Open the Memory page.
-6. Search for the new memory.
-7. Open its detail drawer.
-8. Verify tags, importance, confidence, and related memories.
-9. Open Edit Memory.
-10. Change title and tags.
-11. Save and verify the updated detail view.
-12. Confirm no browser console or page errors.
+| Acceptance area | Evidence status |
+|---|---|
+| Open Create Memory | Visual fixture evidence available |
+| Submit and list a new memory | Visual fixture evidence available |
+| Refresh persistence | Not executed against an authorized Supabase environment |
+| Edit and post-save update | Visual fixture evidence available |
+| Search and detail retrieval | Visual fixture evidence available |
+| Edited-state persistence after refresh | Not executed against an authorized Supabase environment |
 
-Result: passed.
+The visual evidence was captured from a non-production fixture. No Playwright, Puppeteer, package tooling, or browser harness is included or claimed as part of this PR.
 
-Measured search response: **324 ms**, below the five-second success criterion.
+## Performance impact
 
-## Screenshots
+No reproducible performance benchmark is claimed by this PR.
 
+Search is a 300 ms debounced, client-side filter over all memories loaded into the browser. Performance depends on browser, device, network, RLS-visible dataset size, and note length. The current implementation requires controlled evaluation and later pagination/server-side search before corpus growth.
+
+## Screenshot and textual evidence
+
+- [Create Memory form](screenshots/memory-mvp-create.png)
 - [Memory list](screenshots/memory-mvp-list.png)
 - [Filtered search](screenshots/memory-mvp-search.png)
 - [Memory detail](screenshots/memory-mvp-detail.png)
 - [Edit Memory form](screenshots/memory-mvp-edit.png)
 - [Updated memory after save](screenshots/memory-mvp-updated.png)
 
-Visual inspection confirmed the required controls and content were visible without blocking clipping or layout defects.
+Visual inspection found no blocking desktop clipping in the provided states. Responsive behavior, accessibility, failure states, and refresh persistence remain outside the captured evidence.
 
 ## Not executed
 
-- Live Supabase migration
-- Live RLS/authorization verification
-- Production or shared-environment create/edit operations
-- Deployment
-- Multi-user or authentication tests
+- Live or shared Supabase create/edit operations
+- Refresh persistence against an authorized Supabase environment
+- RLS/authorization negative tests
+- Authentication or multi-user tests
+- Production performance tests
+- Deployment or rollback rehearsal
 
-These require separate environment-specific approval and are outside MEM-001 implementation validation.
+These gaps are explicit. The accurate readiness statement is:
+
+> MVP ready for controlled CEO evaluation after merge.

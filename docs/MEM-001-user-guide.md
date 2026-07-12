@@ -85,9 +85,9 @@ Related memories are selected using category and shared tags. This is intentiona
 
 Confirm the Supabase URL, publishable key, table permissions, and RLS rules allow the required operation.
 
-### Confidence is visible but not persisted
+### Confidence changes after editing
 
-The optional `confidence_score` migration may not be applied. The application will calculate the score in the browser until the migration is explicitly approved and executed.
+Confidence is derived in the browser from the current title, category, notes, and tags. It may change when the memory content changes. This PR does not require or include a database schema change for confidence.
 
 ### Search returns no result
 
