@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "alphamind-*.js"
+      - "generate-release-evidence.js"
       - "docs/contracts/**"
       - "test/fixtures/**"
       - ".github/workflows/alphamind-control-plane.yml"
@@ -43,3 +44,19 @@ jobs:
 
       - name: Control-plane invariant checks
         run: node alphamind-control-plane-regression-checks.js
+
+      - name: Generate exact-head release evidence
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || github.sha }}
+          HEAD_SHA: ${{ github.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number || 7 }}
+        run: |
+          node generate-release-evidence.js
+          node -e "const e=require('./release-evidence.json'); if(e.exact_head_sha!==process.env.GITHUB_SHA) process.exit(1)"
+          {
+            echo "## Release evidence"
+            echo
+            echo "- Exact head: \`${GITHUB_SHA}\`"
+            echo "- Bundle validation: PASS"
+            echo "- Production authorization: NOT_REQUESTED"
+          } >> "${GITHUB_STEP_SUMMARY}"
