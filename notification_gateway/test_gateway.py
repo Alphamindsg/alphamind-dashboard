@@ -1,13 +1,16 @@
 import json
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 
 from notification_gateway.gateway import (
+    DirectTelegramTransport,
     Gateway,
     GatewayError,
     NotificationEvent,
     SQLiteState,
+    TransportOutcome,
     format_telegram_message,
 )
 
@@ -15,10 +18,11 @@ from notification_gateway.gateway import (
 def event(**overrides):
     value = {
         "event_id": "evt-1",
+        "business_id": "incident-1",
         "producer": "dashboard",
         "event_code": "OWNER_BLOCKED",
         "severity": "OWNER_ACTION",
-        "summary": "A deploy is blocked token=do-not-store https://bad.example",
+        "summary": "Release is blocked token=do-not-store https://bad.example",
         "impact": "The release cannot proceed.",
         "owner_action": "Review the exact head and approve.",
         "provenance": {
@@ -28,78 +32,144 @@ def event(**overrides):
             "issue": 26,
             "run": 123,
         },
-        "occurred_at": "2026-09-08T09:00:00+00:00",
+        "occurred_at": datetime.now(timezone.utc).isoformat(),
         "sequence": 1,
     }
     value.update(overrides)
     return value
 
 
+class FakeTransport:
+    def __init__(self, outcomes):
+        self.outcomes = iter(outcomes)
+        self.calls = []
+
+    def send(self, text):
+        self.calls.append(text)
+        return next(self.outcomes)
+
+
+class Response:
+    def __init__(self, body):
+        self.body = json.dumps(body).encode()
+
+    def read(self):
+        return self.body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        pass
+
+
 class GatewayTests(unittest.TestCase):
     def setUp(self):
         self.tempdir = tempfile.TemporaryDirectory()
-        self.state = SQLiteState(str(Path(self.tempdir.name) / "state.sqlite3"))
-        self.gateway = Gateway(self.state, {"dashboard"})
+        self.path = str(Path(self.tempdir.name) / "state.sqlite3")
+        self.state = SQLiteState(self.path)
+        self.gateway = Gateway(
+            self.state, {"dashboard"}, allowed_repos={"Alphamindsg/alphamind-dashboard"}
+        )
 
     def tearDown(self):
+        self.state.close()
         self.tempdir.cleanup()
 
-    def test_validation_policy_redaction_and_bounded_plaintext(self):
+    def test_closed_schema_redaction_policy_and_utf16_bound(self):
         parsed = NotificationEvent.from_mapping(event(), frozenset({"dashboard"}))
         self.assertTrue(parsed.should_notify())
         self.assertNotIn("do-not-store", parsed.summary)
         self.assertNotIn("https://", parsed.summary)
-        self.assertLessEqual(len(format_telegram_message(parsed)), 4096)
-        self.assertEqual(self.gateway.submit(event()), "queued")
-        self.assertEqual(self.gateway.submit(event()), "duplicate")
+        huge = NotificationEvent(
+            "long", "dashboard", "OWNER_BLOCKED", "OWNER_ACTION",
+            "😀" * 3000, "impact", "action",
+            {"repo": "Alphamindsg/alphamind-dashboard", "head_sha": "b" * 40},
+            event()["occurred_at"],
+        )
+        self.assertLessEqual(len(format_telegram_message(huge).encode("utf-16-le")) // 2, 4096)
+        with self.assertRaises(GatewayError):
+            self.gateway.submit({**event(), "unexpected": "field"})
+
+    def test_scoped_dedup_conflict_stale_and_concurrent_connections(self):
+        fixed = event(occurred_at="2026-09-08T09:00:00+00:00")
+        self.assertEqual(self.gateway.submit(fixed), "queued")
+        self.assertEqual(self.gateway.submit(fixed), "duplicate")
         with self.assertRaises(GatewayError):
             self.gateway.submit(event(summary="different"))
-
-    def test_silent_and_stale_events(self):
-        quiet = event(event_id="quiet", severity="INFO", owner_action="")
-        self.assertEqual(self.gateway.submit(quiet), "silent")
         with self.assertRaises(GatewayError):
             self.gateway.submit(event(event_id="old", sequence=0))
+        other = SQLiteState(self.path)
+        try:
+            self.assertEqual(
+                Gateway(other, {"dashboard"},
+                        allowed_repos={"Alphamindsg/alphamind-dashboard"}).submit(
+                            event(event_id="same", business_id="incident-2")
+                        ),
+                "queued",
+            )
+        finally:
+            other.close()
 
-    def test_unknown_is_quarantined_and_not_resent(self):
-        class TimeoutTransport:
-            def send(self, _text):
-                raise GatewayError("Telegram transport outcome is unknown")
-
-        gateway = Gateway(self.state, {"dashboard"}, TimeoutTransport())
-        gateway.submit(event())
+    def test_unknown_crash_expiry_receipt_verification_and_reconcile(self):
+        transport = FakeTransport([TransportOutcome("unknown")])
+        gateway = Gateway(self.state, {"dashboard"}, transport,
+                          allowed_repos={"Alphamindsg/alphamind-dashboard"})
+        gateway.submit(event(occurred_at="2026-09-08T09:00:00+00:00"))
         self.assertEqual(gateway.process_one(), "unknown")
-        self.assertIsNone(self.state.claim())
+        self.assertEqual(self.state.health()["state"], "BLOCKED")
+        self.assertEqual(self.state.reconcile("evt-1", ["run-123"], "delivered"), "reconciled")
+
+        self.state.enqueue(NotificationEvent.from_mapping(
+            event(event_id="evt-2", business_id="incident-2"),
+            frozenset({"dashboard"}), frozenset()
+        ))
+        item = self.state.claim()
+        self.assertIsNotNone(item)
+        self.state.db.execute("UPDATE outbox SET lease_until=0 WHERE event_id='evt-2'")
+        self.assertEqual(self.state.recover_expired(), 1)
         self.assertEqual(self.state.health()["state"], "BLOCKED")
 
-    def test_retry_then_verify_and_invalid_producer(self):
-        class RetryTransport:
-            def __init__(self):
-                self.calls = 0
+    def test_retry_cooldown_and_verified_receipt(self):
+        text_holder = {}
 
-            def send(self, _text):
-                self.calls += 1
-                return ("retry", 1) if self.calls == 1 else ("sent", None)
+        class ValidTransport:
+            def send(self, text):
+                text_holder["text"] = text
+                return TransportOutcome("sent", 9, "42", text)
 
-        transport = RetryTransport()
-        gateway = Gateway(self.state, {"dashboard"}, transport)
-        with self.assertRaises(GatewayError):
-            gateway.submit(event(producer="untrusted"))
+        gateway = Gateway(self.state, {"dashboard"}, ValidTransport(),
+                          allowed_repos={"Alphamindsg/alphamind-dashboard"})
         gateway.submit(event())
-        self.assertEqual(gateway.process_one(), "retry")
-        self.state.db.execute(
-            "UPDATE provider_state SET cooldown_until=0 WHERE name='telegram'"
-        )
-        self.state.db.execute("UPDATE outbox SET next_attempt=0")
-        self.assertEqual(gateway.process_one(), "sent")
-        self.assertEqual(self.state.health()["queue"]["VERIFIED"], 1)
+        self.assertEqual(gateway.process_one(), "verified")
+        self.assertEqual(self.state.db.execute("SELECT COUNT(*) FROM receipts").fetchone()[0], 1)
 
-    def test_malformed_provenance_rejected(self):
+        retry_state = SQLiteState(str(Path(self.tempdir.name) / "retry.sqlite3"))
+        retry_gateway = Gateway(
+            retry_state, {"dashboard"},
+            FakeTransport([TransportOutcome("retry", retry_after=7200)]),
+            allowed_repos={"Alphamindsg/alphamind-dashboard"},
+        )
+        retry_gateway.submit(event(event_id="retry", business_id="retry"))
+        self.assertEqual(retry_gateway.process_one(), "retry")
+        self.assertGreaterEqual(
+            retry_state.db.execute(
+                "SELECT cooldown_until FROM provider_state"
+            ).fetchone()[0],
+            retry_state.clock() + 7199,
+        )
+        retry_state.close()
+
+    def test_transport_rejects_malformed_success_and_bad_producer(self):
+        def opener(*_args, **_kwargs):
+            return Response({"ok": True})
+
+        outcome = DirectTelegramTransport("synthetic-token", "42", opener).send("hello")
+        self.assertEqual(outcome.kind, "unknown")
         with self.assertRaises(GatewayError):
-            NotificationEvent.from_mapping(
-                event(provenance={"repo": "https://evil.example", "head_sha": "b" * 40}),
-                frozenset({"dashboard"}),
-            )
+            self.gateway.submit(event(producer="untrusted"))
+        with self.assertRaises(GatewayError):
+            self.gateway.submit(event(provenance={"repo": "evil/repo", "head_sha": "b" * 40}))
 
 
 if __name__ == "__main__":

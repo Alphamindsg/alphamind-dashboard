@@ -16,8 +16,11 @@ Only environment names are documented here:
   mapping; no value belongs in source, issues, logs, or chat)
 
 Keep the state path on durable protected storage. `python -m
-notification_gateway doctor` reports presence only; `health` reports queue,
-dead-letter, `PAUSED`, and `BLOCKED` state without secrets.
+notification_gateway doctor` reports presence only and exits nonzero when
+activation is not ready. Set `ALPHAMIND_NOTIFICATION_STATE` to an absolute
+durable path; the CLI refuses a missing path and never creates a repository-root
+default. `health` reports queue, dead-letter, `PAUSED`, and `BLOCKED` state
+without secrets.
 
 Create a bot in BotFather with `/newbot`, start a private chat with it, and
 discover the chat ID through a secured operator-only process. Put both values
@@ -34,7 +37,10 @@ plain text and bounded to Telegram's message limit.
 
 A timeout or crash after a possible send is `UNKNOWN`: the event is quarantined,
 never automatically resent, and requires explicit operator evidence before
-reconciliation. Dead letters, leases, fencing, retry budgets, 429
+reconciliation. Use the bounded CLI form
+`python -m notification_gateway reconcile --event-id EVENT_ID --decision
+delivered --evidence RUN_REF` only after independently checking the evidence.
+This records `RECONCILED`, not a fabricated Telegram receipt. Dead letters, leases, fencing, retry budgets, 429
 `retry_after`, shared provider cooldown, and redaction are durable controls.
 Apply **PREVENT → DETECT EARLY → ISOLATE → REMEDIATE → VERIFY → RECONCILE →
 RECORD → LEARN → REGRESSION GUARD**. This service does not grant merge,
