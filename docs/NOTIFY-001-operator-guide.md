@@ -45,3 +45,30 @@ This records `RECONCILED`, not a fabricated Telegram receipt. Dead letters, leas
 Apply **PREVENT → DETECT EARLY → ISOLATE → REMEDIATE → VERIFY → RECONCILE →
 RECORD → LEARN → REGRESSION GUARD**. This service does not grant merge,
 deployment, capital, or production-database authority.
+
+## Dual report workflow
+
+Reports must contain `status`, `changes_since_previous`, `exact_head_evidence`,
+`defects_blockers`, `tests_security_recovery`, `next_autonomous_work`, and
+`owner_actions`. Submit a JSON fixture with:
+
+```bash
+ALPHAMIND_NOTIFICATION_STATE=/absolute/durable/path.sqlite3 \
+  python -m notification_gateway report-submit --event report.json
+```
+
+This only records `GENERATED`. It does not claim either destination delivered.
+Production delivery requires explicit ChatGPT and Telegram adapters that return
+platform-confirmed receipts bound to the report ID, revision, part, and content
+hash. For offline contract testing only:
+
+```bash
+ALPHAMIND_NOTIFICATION_STATE=/absolute/durable/path.sqlite3 \
+  python -m notification_gateway report-worker --report-id report-1 \
+  --revision 1 --offline-test-double
+```
+
+The local handoff adapter is intentionally unconfirmed and results in
+`UNKNOWN`; it cannot fabricate ChatGPT success. Telegram failures preserve the
+canonical report and ChatGPT delivery independently. Do not activate live
+sends until protected approval is recorded.

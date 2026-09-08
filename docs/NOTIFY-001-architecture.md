@@ -20,3 +20,19 @@ descriptive and does not grant authority. Local producer adapters authenticate
 at the gateway boundary, while the dry-run adapter never performs network
 side effects. Existing Dashboard checks and the evidence/Claude workstreams
 remain unchanged.
+
+## Dual report delivery
+
+`ReportStore` extends the same SQLite state with canonical report retention,
+revision/content hashes, previous-report links, required structured sections,
+and independently keyed ChatGPT and Telegram deliveries. Telegram uses
+deterministic section-bound chunks; ChatGPT receives the canonical full report.
+Each destination and part has its own status, receipt, retry/UNKNOWN state, and
+audit record. A report is `RECONCILED` only after every required destination
+part has a verified receipt. Generation, export, handoff, and first-chunk
+success never imply delivery.
+
+`OfflineReportAdapter` is explicitly a test double. `LocalHandoffAdapter`
+remains unconfirmed until a trusted platform adapter records a receipt bound to
+the report digest, destination, revision, and part. Credentials are never
+stored in reports or logs.

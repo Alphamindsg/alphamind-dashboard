@@ -4,15 +4,23 @@ import os
 import sys
 
 from .gateway import Gateway, GatewayError, SQLiteState, DirectTelegramTransport, doctor
+from .adapters import LocalHandoffAdapter, OfflineReportAdapter
+from .report import ReportGateway, ReportStore
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="AlphaMind notification gateway")
-    parser.add_argument("command", choices=("doctor", "health", "worker", "submit", "reconcile"))
+    parser.add_argument("command", choices=(
+        "doctor", "health", "worker", "submit", "reconcile",
+        "report-submit", "report-worker",
+    ))
     parser.add_argument("--event", help="path to a JSON event fixture")
     parser.add_argument("--event-id")
     parser.add_argument("--evidence", action="append", default=[])
     parser.add_argument("--decision", choices=("delivered", "not_delivered", "dead"))
+    parser.add_argument("--report-id")
+    parser.add_argument("--revision", type=int)
+    parser.add_argument("--offline-test-double", action="store_true")
     args = parser.parse_args()
     if args.command == "doctor":
         result = doctor()
@@ -39,6 +47,27 @@ def main() -> int:
             print("--event-id and --decision are required", file=sys.stderr)
             return 2
         print(state.reconcile(args.event_id, args.evidence, args.decision))
+    elif args.command == "report-submit":
+        if not args.event:
+            print("--event is required", file=sys.stderr)
+            return 2
+        with open(args.event, encoding="utf-8") as stream:
+            print(ReportGateway(
+                ReportStore(state),
+                {"chatgpt": LocalHandoffAdapter(), "telegram": LocalHandoffAdapter()},
+            ).ingest(json.load(stream)))
+    elif args.command == "report-worker":
+        if not args.report_id or not args.revision:
+            print("--report-id and --revision are required", file=sys.stderr)
+            return 2
+        if args.offline_test_double:
+            adapters = {
+                "chatgpt": OfflineReportAdapter("chatgpt"),
+                "telegram": OfflineReportAdapter("telegram"),
+            }
+        else:
+            adapters = {"chatgpt": LocalHandoffAdapter(), "telegram": LocalHandoffAdapter()}
+        print(ReportGateway(ReportStore(state), adapters).deliver_one(args.report_id, args.revision))
     else:
         transport = None
         if os.getenv("ALPHAMIND_TELEGRAM_BOT_TOKEN") and os.getenv("ALPHAMIND_TELEGRAM_CHAT_ID"):
