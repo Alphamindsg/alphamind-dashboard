@@ -1,0 +1,15 @@
+{
+  "schema_version": "0.1.0",
+  "repository": null,
+  "branch": null,
+  "pr": null,
+  "baseline_sha": null,
+  "candidate_sha": null,
+  "created_at": null,
+  "checks": [],
+  "outstanding_risks": [],
+  "rollback_plan": null,
+  "production_authorization": {
+    "status": "NOT_REQUESTED"
+  }
+}
