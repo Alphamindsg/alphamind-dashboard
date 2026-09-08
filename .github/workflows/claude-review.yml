@@ -1,0 +1,76 @@
+name: Claude Independent PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  claude-review:
+    # Same-repository PRs only: never expose repository secrets to fork PRs.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      actions: read
+
+    steps:
+      - name: Check out exact PR head
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+          persist-credentials: true
+
+      - name: Require Claude OAuth configuration
+        id: auth
+        shell: bash
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          if [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+            echo "CLAUDE_CODE_OAUTH_TOKEN detected; running independent review."
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::error::Claude independent review is REQUIRED but CLAUDE_CODE_OAUTH_TOKEN is not configured."
+            {
+              echo "## Claude Independent PR Review: BLOCKED"
+              echo
+              echo "No independent Claude review was performed because the repository secret \`CLAUDE_CODE_OAUTH_TOKEN\` is not configured."
+              echo "Do not treat this workflow as a review PASS. Repository-owner activation is required."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+      - name: Run independent Claude review
+        if: steps.auth.outputs.configured == 'true'
+        uses: anthropics/claude-code-action@a874e9ecd7bb36efdad65429c6b35815f5a08f10 # v1.0.210
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          allowed_bots: Copilot
+          track_progress: true
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+            EXACT HEAD SHA: ${{ github.event.pull_request.head.sha }}
+
+            Act as an independent senior software, architecture, security, CI, release, and investment-systems reviewer.
+            Do not modify repository code, merge, deploy, authorize trading/capital, mutate production systems, or weaken quality/security/release gates.
+            Do not assume ChatGPT, Codex, Copilot, or any prior agent conclusion is correct.
+
+            Review the exact PR head and relevant CI evidence. For AlphaMind/Dashboard prioritize separation of presentation from canonical truth, investment-policy and authority boundaries, evidence/provenance/freshness, deterministic cent-accurate economics, portfolio/risk controls, accounting/reconciliation interfaces, bot-control-plane safety, plugin/tool authority, exact-head release evidence, and prevention of dashboard state from becoming an unauthorized source of truth or capital authority.
+
+            Separate findings into Verified defects, Probable defects requiring confirmation, CI/infrastructure problems, Missing test coverage, and Release blockers.
+            Rank every material finding Critical, High, Medium, or Low with exact evidence and the smallest safe remediation. Explicitly mark uncertainty and suspected false positives.
+            Finish with exactly one disposition: PASS, PASS WITH CONDITIONS, or FAIL. A green build alone is not sufficient.
+            Post one concise top-level PR comment containing the structured review and disposition.
+          claude_args: |
+            --allowed-tools "Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr checks:*)"
