@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Mapping
 
 MAX_TELEGRAM_LENGTH = 4096
-MAX_COOLDOWN = 7200
+MAX_COOLDOWN = 2**63 - 1
 SEVERITIES = frozenset({"INFO", "WARNING", "OWNER_ACTION", "CRITICAL"})
 PROVENANCE_KEYS = frozenset({"repo", "head_sha", "pr", "issue", "run"})
 TOP_LEVEL_KEYS = frozenset({
@@ -41,6 +41,8 @@ TOKEN_RE = re.compile(
 )
 PEM_RE = re.compile(r"-----BEGIN [^-]+-----.*?-----END [^-]+-----", re.S)
 BARE_TOKEN_RE = re.compile(r"\b(?:sk|gh[pousr]|xox[baprs])-[A-Za-z0-9_-]{8,}\b")
+GH_TOKEN_RE = re.compile(r"\bgh[pousr]_[A-Za-z0-9_]{8,}\b")
+TELEGRAM_TOKEN_RE = re.compile(r"\b\d{6,}:[A-Za-z0-9_-]{20,}\b")
 
 
 class GatewayError(ValueError):
@@ -63,7 +65,14 @@ def _safe_text(value: str, limit: int = 1000) -> str:
     value = PEM_RE.sub("[REDACTED]", value)
     value = URL_RE.sub("[URL REDACTED]", value)
     value = TOKEN_RE.sub("[CREDENTIAL REDACTED]", value)
-    return BARE_TOKEN_RE.sub("[CREDENTIAL REDACTED]", value)
+    value = BARE_TOKEN_RE.sub("[CREDENTIAL REDACTED]", value)
+    value = GH_TOKEN_RE.sub("[CREDENTIAL REDACTED]", value)
+    value = TELEGRAM_TOKEN_RE.sub("[CREDENTIAL REDACTED]", value)
+    for name in ("ALPHAMIND_TELEGRAM_BOT_TOKEN", "ALPHAMIND_PRODUCER_AUTH"):
+        configured = os.getenv(name)
+        if configured:
+            value = value.replace(configured, "[CREDENTIAL REDACTED]")
+    return value
 
 
 def redact(value: Any) -> Any:
@@ -123,6 +132,8 @@ class NotificationEvent:
         event_code = raw["event_code"]
         if not isinstance(event_id, str) or not SAFE_ID_RE.fullmatch(event_id):
             raise GatewayError("invalid event_id")
+        if _safe_text(event_id) != event_id:
+            raise GatewayError("event_id contains unsafe material")
         if not isinstance(event_code, str) or not EVENT_CODE_RE.fullmatch(event_code):
             raise GatewayError("invalid event_code")
         provenance = raw["provenance"]
@@ -139,11 +150,11 @@ class NotificationEvent:
             raise GatewayError("head_sha is invalid")
         for key in ("pr", "issue", "run"):
             if key in provenance and (
-                type(provenance[key]) is not int or not 0 < provenance[key] < 10**9
+                type(provenance[key]) is not int or not 0 < provenance[key] < 2**63
             ):
                 raise GatewayError("provenance reference is invalid")
         sequence = raw.get("sequence", 0)
-        if type(sequence) is not int or not 0 <= sequence < 10**9:
+        if type(sequence) is not int or not 0 <= sequence < 2**63:
             raise GatewayError("sequence is invalid")
         business_id = raw.get("business_id", event_id)
         if not isinstance(business_id, str) or not SAFE_ID_RE.fullmatch(business_id):
@@ -156,6 +167,8 @@ class NotificationEvent:
         )
 
     def should_notify(self) -> bool:
+        if self.severity in {"OWNER_ACTION", "CRITICAL"} and not self.owner_action.strip():
+            raise GatewayError("actionable events require an owner action")
         return self.severity in {"OWNER_ACTION", "CRITICAL"} or (
             self.severity == "WARNING" and bool(self.owner_action.strip())
         )
@@ -175,9 +188,9 @@ def format_telegram_message(event: NotificationEvent) -> str:
         f"Minimum owner action: {event.owner_action}\nProvenance: {provenance}"
     )
     encoded = text.encode("utf-16-le", "surrogatepass")
-    if len(encoded) // 2 <= MAX_TELEGRAM_LENGTH:
-        return text
-    return encoded[: (MAX_TELEGRAM_LENGTH - 1) * 2].decode("utf-16-le", "ignore") + "…"
+    if len(encoded) // 2 > MAX_TELEGRAM_LENGTH:
+        raise GatewayError("notification exceeds Telegram UTF-16 limit")
+    return text
 
 
 @dataclass(frozen=True)
@@ -200,29 +213,28 @@ class SQLiteState:
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.executescript("""
         CREATE TABLE IF NOT EXISTS events (
-          producer TEXT, repo TEXT, business_id TEXT, event_id TEXT, fingerprint TEXT,
-          payload TEXT, sequence INTEGER, status TEXT, created_at REAL,
-          PRIMARY KEY (producer, repo, business_id)
+          scope_key TEXT PRIMARY KEY, producer TEXT, repo TEXT, business_id TEXT, event_id TEXT, fingerprint TEXT,
+          payload TEXT, sequence INTEGER, status TEXT, created_at REAL
         );
         CREATE TABLE IF NOT EXISTS outbox (
-          event_id TEXT PRIMARY KEY, attempts INTEGER NOT NULL, next_attempt REAL,
+          scope_key TEXT PRIMARY KEY, attempts INTEGER NOT NULL, next_attempt REAL,
           lease_until REAL, lease_token TEXT, status TEXT
         );
         CREATE TABLE IF NOT EXISTS send_intents (
-          event_id TEXT, attempt INTEGER, text_digest TEXT, text TEXT, created_at REAL,
-          PRIMARY KEY(event_id, attempt)
+          scope_key TEXT, attempt INTEGER, text_digest TEXT, text TEXT, created_at REAL,
+          PRIMARY KEY(scope_key, attempt)
         );
         CREATE TABLE IF NOT EXISTS receipts (
-          event_id TEXT, attempt INTEGER, provider TEXT, message_id INTEGER,
+          scope_key TEXT, attempt INTEGER, provider TEXT, message_id INTEGER,
           chat_id TEXT, text_digest TEXT, verified INTEGER, created_at REAL,
-          PRIMARY KEY(event_id, attempt)
+          PRIMARY KEY(scope_key, attempt)
         );
         CREATE TABLE IF NOT EXISTS audit (
-          id INTEGER PRIMARY KEY AUTOINCREMENT, event_id TEXT, transition TEXT,
+          id INTEGER PRIMARY KEY AUTOINCREMENT, scope_key TEXT, transition TEXT,
           detail TEXT, created_at REAL
         );
         CREATE TABLE IF NOT EXISTS dead_letters (
-          event_id TEXT PRIMARY KEY, reason TEXT, created_at REAL
+          scope_key TEXT PRIMARY KEY, reason TEXT, created_at REAL
         );
         CREATE TABLE IF NOT EXISTS provider_state (
           name TEXT PRIMARY KEY, cooldown_until REAL NOT NULL DEFAULT 0
@@ -238,18 +250,18 @@ class SQLiteState:
     def __exit__(self, *_: Any) -> None:
         self.close()
 
-    def _audit(self, event_id: str, transition: str, detail: str = "") -> None:
-        self.db.execute("INSERT INTO audit(event_id,transition,detail,created_at) VALUES(?,?,?,?)",
-                        (event_id, transition, redact(detail), self.clock()))
+    def _audit(self, scope_key: str, transition: str, detail: str = "") -> None:
+        self.db.execute("INSERT INTO audit(scope_key,transition,detail,created_at) VALUES(?,?,?,?)",
+                        (scope_key, transition, redact(detail), self.clock()))
 
     def enqueue(self, event: NotificationEvent) -> str:
         fingerprint = hashlib.sha256(event.canonical().encode()).hexdigest()
         repo = event.provenance["repo"]
+        scope_key = "|".join((event.producer, repo, event.business_id, event.event_id))
         self.db.execute("BEGIN IMMEDIATE")
         try:
             old = self.db.execute(
-                "SELECT fingerprint, sequence FROM events WHERE producer=? AND repo=? AND business_id=?",
-                (event.producer, repo, event.business_id)).fetchone()
+                "SELECT fingerprint FROM events WHERE scope_key=?", (scope_key,)).fetchone()
             if old:
                 if old["fingerprint"] != fingerprint:
                     raise GatewayError("duplicate business event conflicts")
@@ -261,13 +273,25 @@ class SQLiteState:
             if prior is not None and event.sequence < prior:
                 raise GatewayError("stale event")
             status = "QUEUED" if event.should_notify() else "SILENT"
-            self.db.execute("INSERT INTO events VALUES (?,?,?,?,?,?,?,?,?)",
-                            (event.producer, repo, event.business_id, event.event_id,
+            self.db.execute("INSERT INTO events VALUES (?,?,?,?,?,?,?,?,?,?)",
+                            (scope_key, event.producer, repo, event.business_id, event.event_id,
                              fingerprint, event.canonical(), event.sequence, status, self.clock()))
             if event.should_notify():
                 self.db.execute("INSERT INTO outbox VALUES (?,?,?,0,NULL,'READY')",
-                                (event.event_id, 0, self.clock()))
-            self._audit(event.event_id, status)
+                                (scope_key, 0, self.clock()))
+            # A newer version supersedes only older pending work for this incident.
+            self.db.execute(
+                """UPDATE outbox SET status='SUPERSEDED', lease_token=NULL
+                   WHERE scope_key IN (SELECT scope_key FROM events
+                   WHERE producer=? AND repo=? AND business_id=? AND sequence<?)
+                   AND status IN ('READY','PAUSED')""",
+                (event.producer, repo, event.business_id, event.sequence),
+            )
+            self.db.execute(
+                """UPDATE events SET status='SUPERSEDED' WHERE scope_key IN
+                   (SELECT scope_key FROM outbox WHERE status='SUPERSEDED')"""
+            )
+            self._audit(scope_key, status)
             self.db.execute("COMMIT")
             return status.lower()
         except Exception:
@@ -284,57 +308,72 @@ class SQLiteState:
             self.db.execute("COMMIT")
             return None
         row = self.db.execute(
-            "SELECT o.*, e.payload FROM outbox o JOIN events e ON e.event_id=o.event_id "
+            "SELECT o.*, e.payload FROM outbox o JOIN events e ON e.scope_key=o.scope_key "
             "WHERE o.status='READY' AND o.next_attempt<=? ORDER BY o.next_attempt LIMIT 1",
             (now,)).fetchone()
         if not row:
             self.db.execute("COMMIT")
             return None
         token = secrets.token_hex(16)
-        self.db.execute("UPDATE outbox SET status='LEASED', lease_until=?, lease_token=? WHERE event_id=?",
-                        (now + lease_seconds, token, row["event_id"]))
-        self._audit(row["event_id"], "LEASED")
+        self.db.execute("UPDATE outbox SET status='LEASED', lease_until=?, lease_token=? WHERE scope_key=?",
+                        (now + lease_seconds, token, row["scope_key"]))
+        self.db.execute(
+            """INSERT INTO provider_state(name, cooldown_until) VALUES('telegram', ?)
+               ON CONFLICT(name) DO UPDATE SET cooldown_until=
+               MAX(cooldown_until, excluded.cooldown_until)""",
+            (now + 1,),
+        )
+        self._audit(row["scope_key"], "LEASED")
         self.db.execute("COMMIT")
         return {**dict(row), "lease_token": token}
+
+    def resume_paused(self) -> int:
+        self.db.execute("BEGIN IMMEDIATE")
+        result = self.db.execute(
+            "UPDATE outbox SET status='READY', next_attempt=? WHERE status='PAUSED'",
+            (self.clock(),),
+        )
+        self.db.execute("COMMIT")
+        return result.rowcount
 
     def recover_expired(self) -> int:
         now = self.clock()
         self.db.execute("BEGIN IMMEDIATE")
         rows = self.db.execute(
-            "SELECT event_id FROM outbox WHERE status='LEASED' AND lease_until<?", (now,)).fetchall()
+            "SELECT scope_key FROM outbox WHERE status='LEASED' AND lease_until<?", (now,)).fetchall()
         for row in rows:
-            self.db.execute("UPDATE outbox SET status='UNKNOWN', lease_token=NULL WHERE event_id=?",
-                            (row["event_id"],))
-            self.db.execute("UPDATE events SET status='UNKNOWN' WHERE event_id=?", (row["event_id"],))
-            self._audit(row["event_id"], "LEASE_EXPIRED", "possible send quarantined")
+            self.db.execute("UPDATE outbox SET status='UNKNOWN', lease_token=NULL WHERE scope_key=?",
+                            (row["scope_key"],))
+            self.db.execute("UPDATE events SET status='UNKNOWN' WHERE scope_key=?", (row["scope_key"],))
+            self._audit(row["scope_key"], "LEASE_EXPIRED", "possible send quarantined")
         self.db.execute("COMMIT")
         return len(rows)
 
     def record_intent(self, item: Mapping[str, Any], text: str) -> str:
         digest = hashlib.sha256(text.encode()).hexdigest()
         self.db.execute("BEGIN IMMEDIATE")
-        row = self.db.execute("SELECT status, lease_token FROM outbox WHERE event_id=?", (item["event_id"],)).fetchone()
-        if not row or row["status"] != "LEASED" or row["lease_token"] != item["lease_token"]:
+        row = self.db.execute("SELECT status, lease_token, lease_until FROM outbox WHERE scope_key=?", (item["scope_key"],)).fetchone()
+        if not row or row["status"] != "LEASED" or row["lease_token"] != item["lease_token"] or row["lease_until"] <= self.clock():
             self.db.execute("ROLLBACK")
             raise GatewayError("stale lease")
         attempt = int(item["attempts"]) + 1
         self.db.execute("INSERT INTO send_intents VALUES (?,?,?,?,?)",
-                        (item["event_id"], attempt, digest, text, self.clock()))
-        self._audit(item["event_id"], "SEND_INTENT", f"attempt={attempt}")
+                        (item["scope_key"], attempt, digest, text, self.clock()))
+        self._audit(item["scope_key"], "SEND_INTENT", f"attempt={attempt}")
         self.db.execute("COMMIT")
         return digest
 
     def finish(self, item: Mapping[str, Any], outcome: TransportOutcome,
                max_attempts: int = 5) -> str:
         self.db.execute("BEGIN IMMEDIATE")
-        row = self.db.execute("SELECT * FROM outbox WHERE event_id=? AND lease_token=? AND status='LEASED'",
-                              (item["event_id"], item["lease_token"])).fetchone()
+        row = self.db.execute("SELECT * FROM outbox WHERE scope_key=? AND lease_token=? AND status='LEASED' AND lease_until>?",
+                              (item["scope_key"], item["lease_token"], self.clock())).fetchone()
         if not row:
             self.db.execute("ROLLBACK")
             raise GatewayError("stale lease")
         attempt = row["attempts"] + 1
-        intent = self.db.execute("SELECT * FROM send_intents WHERE event_id=? AND attempt=?",
-                                 (item["event_id"], attempt)).fetchone()
+        intent = self.db.execute("SELECT * FROM send_intents WHERE scope_key=? AND attempt=?",
+                                 (item["scope_key"], attempt)).fetchone()
         if outcome.kind == "sent":
             if not intent or outcome.message_id is None or outcome.chat_id is None or outcome.text is None:
                 outcome = TransportOutcome("unknown")
@@ -342,72 +381,77 @@ class SQLiteState:
                 outcome = TransportOutcome("unknown")
             else:
                 self.db.execute("INSERT INTO receipts VALUES (?,?,?,?,?,?,?,?)",
-                                (item["event_id"], attempt, "telegram", outcome.message_id,
+                                (item["scope_key"], attempt, "telegram", outcome.message_id,
                                  outcome.chat_id, intent["text_digest"], 1, self.clock()))
         status = {"sent": "VERIFIED", "unknown": "UNKNOWN", "rejected": "BLOCKED"}.get(outcome.kind)
         if status:
-            self.db.execute("UPDATE outbox SET status=?, attempts=?, lease_token=NULL WHERE event_id=?",
-                            (status, attempt, item["event_id"]))
-            self.db.execute("UPDATE events SET status=? WHERE event_id=?", (status, item["event_id"]))
-            self._audit(item["event_id"], status, outcome.kind)
+            self.db.execute("UPDATE outbox SET status=?, attempts=?, lease_token=NULL WHERE scope_key=?",
+                            (status, attempt, item["scope_key"]))
+            self.db.execute("UPDATE events SET status=? WHERE scope_key=?", (status, item["scope_key"]))
+            self._audit(item["scope_key"], status, outcome.kind)
             if status == "UNKNOWN":
                 self.db.execute("INSERT OR REPLACE INTO dead_letters VALUES (?,?,?)",
-                                (item["event_id"], "ambiguous provider outcome", self.clock()))
+                                (item["scope_key"], "ambiguous provider outcome", self.clock()))
             self.db.execute("COMMIT")
             return status.lower()
         if attempt >= max_attempts:
-            self.db.execute("UPDATE outbox SET status='DEAD', attempts=?, lease_token=NULL WHERE event_id=?",
-                            (attempt, item["event_id"]))
-            self.db.execute("UPDATE events SET status='DEAD' WHERE event_id=?", (item["event_id"],))
+            self.db.execute("UPDATE outbox SET status='DEAD', attempts=?, lease_token=NULL WHERE scope_key=?",
+                            (attempt, item["scope_key"]))
+            self.db.execute("UPDATE events SET status='DEAD' WHERE scope_key=?", (item["scope_key"],))
             self.db.execute("INSERT OR REPLACE INTO dead_letters VALUES (?,?,?)",
-                            (item["event_id"], "retry budget exhausted", self.clock()))
-            self._audit(item["event_id"], "DEAD")
+                            (item["scope_key"], "retry budget exhausted", self.clock()))
+            self._audit(item["scope_key"], "DEAD")
             self.db.execute("COMMIT")
             return "dead"
         delay = min(MAX_COOLDOWN, 2 ** min(attempt, 10)) + self.random_fn()
-        self.db.execute("UPDATE outbox SET status='READY', attempts=?, next_attempt=?, lease_until=0, lease_token=NULL WHERE event_id=?",
-                        (attempt, self.clock() + delay, item["event_id"]))
-        self._audit(item["event_id"], "RETRY", f"attempt={attempt}")
+        self.db.execute("UPDATE outbox SET status='READY', attempts=?, next_attempt=?, lease_until=0, lease_token=NULL WHERE scope_key=?",
+                        (attempt, self.clock() + delay, item["scope_key"]))
+        self._audit(item["scope_key"], "RETRY", f"attempt={attempt}")
         self.db.execute("COMMIT")
         return "retry"
 
     def pause(self, item: Mapping[str, Any]) -> str:
         self.db.execute("BEGIN IMMEDIATE")
         row = self.db.execute(
-            "SELECT status, lease_token FROM outbox WHERE event_id=?", (item["event_id"],)
+            "SELECT status, lease_token, lease_until FROM outbox WHERE scope_key=?", (item["scope_key"],)
         ).fetchone()
-        if not row or row["status"] != "LEASED" or row["lease_token"] != item["lease_token"]:
+        if not row or row["status"] != "LEASED" or row["lease_token"] != item["lease_token"] or row["lease_until"] <= self.clock():
             self.db.execute("ROLLBACK")
             raise GatewayError("stale lease")
         self.db.execute(
-            "UPDATE outbox SET status='PAUSED', lease_token=NULL WHERE event_id=?",
-            (item["event_id"],),
+            "UPDATE outbox SET status='PAUSED', lease_token=NULL WHERE scope_key=?",
+            (item["scope_key"],),
         )
-        self.db.execute("UPDATE events SET status='PAUSED' WHERE event_id=?", (item["event_id"],))
-        self._audit(item["event_id"], "PAUSED", "provider configuration absent")
+        self.db.execute("UPDATE events SET status='PAUSED' WHERE scope_key=?", (item["scope_key"],))
+        self._audit(item["scope_key"], "PAUSED", "provider configuration absent")
         self.db.execute("COMMIT")
         return "paused"
 
     def cooldown(self, seconds: int) -> None:
-        value = self.clock() + max(0, min(int(seconds), MAX_COOLDOWN))
+        if type(seconds) is not int or seconds < 0:
+            raise GatewayError("invalid provider cooldown")
+        value = self.clock() + seconds
         self.db.execute("""INSERT INTO provider_state VALUES('telegram',?)
                            ON CONFLICT(name) DO UPDATE SET cooldown_until=
                            MAX(cooldown_until, excluded.cooldown_until)""", (value,))
 
-    def reconcile(self, event_id: str, evidence: list[str], decision: str) -> str:
+    def reconcile(self, scope_key: str, evidence: list[str], decision: str,
+                  operator_id: str = "") -> str:
         if decision not in {"delivered", "not_delivered", "dead"} or not evidence or len(evidence) > 5:
             raise GatewayError("bounded reconciliation evidence is required")
+        if not operator_id or not SAFE_ID_RE.fullmatch(operator_id):
+            raise GatewayError("operator identity is required")
         if any(not isinstance(ref, str) or not SAFE_ID_RE.fullmatch(ref) for ref in evidence):
             raise GatewayError("invalid evidence reference")
         self.db.execute("BEGIN IMMEDIATE")
-        row = self.db.execute("SELECT status FROM events WHERE event_id=?", (event_id,)).fetchone()
+        row = self.db.execute("SELECT status FROM events WHERE scope_key=?", (scope_key,)).fetchone()
         if not row or row["status"] != "UNKNOWN":
             self.db.execute("ROLLBACK")
             raise GatewayError("only UNKNOWN events can be reconciled")
-        status = {"delivered": "RECONCILED", "not_delivered": "DEAD", "dead": "DEAD"}[decision]
-        self.db.execute("UPDATE events SET status=? WHERE event_id=?", (status, event_id))
-        self.db.execute("UPDATE outbox SET status=?, lease_token=NULL WHERE event_id=?", (status, event_id))
-        self._audit(event_id, "RECONCILE", f"{decision} evidence={','.join(evidence)}")
+        status = {"delivered": "OPERATOR_ATTESTED", "not_delivered": "DEAD", "dead": "DEAD"}[decision]
+        self.db.execute("UPDATE events SET status=? WHERE scope_key=?", (status, scope_key))
+        self.db.execute("UPDATE outbox SET status=?, lease_token=NULL WHERE scope_key=?", (status, scope_key))
+        self._audit(scope_key, "OPERATOR_ATTESTED", f"operator={operator_id} decision={decision} evidence={','.join(evidence)}")
         self.db.execute("COMMIT")
         return status.lower()
 
@@ -483,6 +527,8 @@ class Gateway:
         return self.state.enqueue(event)
 
     def process_one(self, max_attempts: int = 5) -> str:
+        if self.transport:
+            self.state.resume_paused()
         item = self.state.claim()
         if not item:
             return "empty"

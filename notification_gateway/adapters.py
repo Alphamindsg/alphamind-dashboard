@@ -11,12 +11,14 @@ from .report import DeliveryReceipt
 class LocalProducer:
     """A bounded local adapter; deployment wiring supplies its auth separately."""
 
-    def __init__(self, gateway: Gateway, name: str = "dashboard", auth: str = "local"):
+    def __init__(self, gateway: Gateway, name: str = "dashboard", auth: str | None = None):
         self.gateway, self.name, self.auth = gateway, name, auth
 
     def submit(self, event: Mapping[str, Any]) -> str:
         if event.get("producer") != self.name:
             raise ValueError("producer does not match adapter")
+        if not self.auth:
+            raise ValueError("producer authentication is not configured")
         return self.gateway.submit(event, auth=self.auth)
 
 

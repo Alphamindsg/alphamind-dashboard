@@ -21,6 +21,12 @@ at the gateway boundary, while the dry-run adapter never performs network
 side effects. Existing Dashboard checks and the evidence/Claude workstreams
 remain unchanged.
 
+Event identity is scoped by `producer/repo/business_id/event_id`; incident
+versions use a per-scope sequence and supersede only older pending work.
+GitHub run references accept positive 64-bit-safe integers. Expired leases are
+fenced before intent, receipt, or pause transitions. Operator reconciliation is
+recorded as `OPERATOR_ATTESTED`, never as a provider receipt.
+
 ## Dual report delivery
 
 `ReportStore` extends the same SQLite state with canonical report retention,

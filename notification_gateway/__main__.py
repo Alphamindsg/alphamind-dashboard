@@ -18,6 +18,8 @@ def main() -> int:
     parser.add_argument("--event-id")
     parser.add_argument("--evidence", action="append", default=[])
     parser.add_argument("--decision", choices=("delivered", "not_delivered", "dead"))
+    parser.add_argument("--operator-id")
+    parser.add_argument("--scope-key")
     parser.add_argument("--report-id")
     parser.add_argument("--revision", type=int)
     parser.add_argument("--offline-test-double", action="store_true")
@@ -35,18 +37,29 @@ def main() -> int:
         ready = bool(os.getenv("ALPHAMIND_TELEGRAM_BOT_TOKEN")) and bool(
             os.getenv("ALPHAMIND_TELEGRAM_CHAT_ID")
         )
-        print(json.dumps(state.health(provider_ready=ready), sort_keys=True))
+        result = state.health(provider_ready=ready)
+        print(json.dumps(result, sort_keys=True))
+        if result["state"] == "BLOCKED":
+            state.close()
+            return 2
     elif args.command == "submit":
         if not args.event:
             print("--event is required", file=sys.stderr)
             return 2
         with open(args.event, encoding="utf-8") as stream:
-            print(Gateway(state, {"dashboard"}).submit(json.load(stream)))
+            producer_auth = os.getenv("ALPHAMIND_PRODUCER_AUTH")
+            allowed_repos = set(filter(None, os.getenv("ALPHAMIND_ALLOWED_REPOS", "").split(",")))
+            if not producer_auth or not allowed_repos:
+                print("producer authentication and repository binding are required", file=sys.stderr)
+                return 2
+            print(Gateway(state, {"dashboard": producer_auth}, allowed_repos=allowed_repos).submit(
+                json.load(stream), auth=producer_auth
+            ))
     elif args.command == "reconcile":
-        if not args.event_id or not args.decision:
-            print("--event-id and --decision are required", file=sys.stderr)
+        if not (args.scope_key or args.event_id) or not args.decision or not args.operator_id:
+            print("--scope-key, --decision, and --operator-id are required", file=sys.stderr)
             return 2
-        print(state.reconcile(args.event_id, args.evidence, args.decision))
+        print(state.reconcile(args.scope_key or args.event_id, args.evidence, args.decision, args.operator_id))
     elif args.command == "report-submit":
         if not args.event:
             print("--event is required", file=sys.stderr)

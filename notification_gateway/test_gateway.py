@@ -87,7 +87,8 @@ class GatewayTests(unittest.TestCase):
             {"repo": "Alphamindsg/alphamind-dashboard", "head_sha": "b" * 40},
             event()["occurred_at"],
         )
-        self.assertLessEqual(len(format_telegram_message(huge).encode("utf-16-le")) // 2, 4096)
+        with self.assertRaises(GatewayError):
+            format_telegram_message(huge)
         with self.assertRaises(GatewayError):
             self.gateway.submit({**event(), "unexpected": "field"})
 
@@ -111,6 +112,29 @@ class GatewayTests(unittest.TestCase):
         finally:
             other.close()
 
+    def test_same_event_id_silent_and_actionable_scopes_do_not_cross_join(self):
+        silent = event(
+            producer="a", event_id="evt-1", business_id="one", severity="INFO",
+            owner_action="", sequence=1,
+        )
+        actionable = event(
+            producer="b", event_id="evt-1", business_id="two", severity="OWNER_ACTION",
+            sequence=1,
+        )
+        self.assertEqual(
+            Gateway(self.state, {"a", "b"},
+                    allowed_repos={"Alphamindsg/alphamind-dashboard"}).submit(silent),
+            "silent",
+        )
+        gateway = Gateway(
+            self.state, {"a": "local", "b": "local"},
+            allowed_repos={"Alphamindsg/alphamind-dashboard"},
+        )
+        self.assertEqual(gateway.submit(actionable), "queued")
+        self.state.db.execute("UPDATE provider_state SET cooldown_until=0")
+        item = self.state.claim()
+        self.assertEqual(item["scope_key"], "b|Alphamindsg/alphamind-dashboard|two|evt-1")
+
     def test_unknown_crash_expiry_receipt_verification_and_reconcile(self):
         transport = FakeTransport([TransportOutcome("unknown")])
         gateway = Gateway(self.state, {"dashboard"}, transport,
@@ -118,15 +142,23 @@ class GatewayTests(unittest.TestCase):
         gateway.submit(event(occurred_at="2026-09-08T09:00:00+00:00"))
         self.assertEqual(gateway.process_one(), "unknown")
         self.assertEqual(self.state.health()["state"], "BLOCKED")
-        self.assertEqual(self.state.reconcile("evt-1", ["run-123"], "delivered"), "reconciled")
+        self.assertEqual(
+            self.state.reconcile("dashboard|Alphamindsg/alphamind-dashboard|incident-1|evt-1",
+                                 ["run-123"], "delivered", "operator-1"),
+            "operator_attested",
+        )
 
         self.state.enqueue(NotificationEvent.from_mapping(
             event(event_id="evt-2", business_id="incident-2"),
             frozenset({"dashboard"}), frozenset()
         ))
+        self.state.db.execute("UPDATE provider_state SET cooldown_until=0")
         item = self.state.claim()
         self.assertIsNotNone(item)
-        self.state.db.execute("UPDATE outbox SET lease_until=0 WHERE event_id='evt-2'")
+        self.state.db.execute(
+            "UPDATE outbox SET lease_until=0 WHERE scope_key=?",
+            ("dashboard|Alphamindsg/alphamind-dashboard|incident-2|evt-2",),
+        )
         self.assertEqual(self.state.recover_expired(), 1)
         self.assertEqual(self.state.health()["state"], "BLOCKED")
 

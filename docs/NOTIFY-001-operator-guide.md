@@ -72,3 +72,10 @@ The local handoff adapter is intentionally unconfirmed and results in
 `UNKNOWN`; it cannot fabricate ChatGPT success. Telegram failures preserve the
 canonical report and ChatGPT delivery independently. Do not activate live
 sends until protected approval is recorded.
+
+The base event CLI also fails closed unless `ALPHAMIND_PRODUCER_AUTH` and
+`ALPHAMIND_ALLOWED_REPOS` are configured. A paused event resumes when a
+configured worker runs again; `BLOCKED` health and missing readiness exit
+nonzero. Operator reconciliation requires an explicit operator ID and bounded
+evidence references and records an operator attestation rather than claiming a
+provider-verified receipt.
