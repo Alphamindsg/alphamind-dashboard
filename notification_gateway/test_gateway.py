@@ -87,6 +87,9 @@ class GatewayTests(unittest.TestCase):
             gateway.submit(event(producer="untrusted"))
         gateway.submit(event())
         self.assertEqual(gateway.process_one(), "retry")
+        self.state.db.execute(
+            "UPDATE provider_state SET cooldown_until=0 WHERE name='telegram'"
+        )
         self.state.db.execute("UPDATE outbox SET next_attempt=0")
         self.assertEqual(gateway.process_one(), "sent")
         self.assertEqual(self.state.health()["queue"]["VERIFIED"], 1)

@@ -274,7 +274,8 @@ class SQLiteState:
         else:
             delay = min(3600, 2 ** min(attempts, 10)) + random.random()
             self.db.execute(
-                "UPDATE outbox SET status='READY', attempts=?, next_attempt=?, lease_token=NULL WHERE event_id=?",
+                """UPDATE outbox SET status='READY', attempts=?, next_attempt=?,
+                   lease_until=0, lease_token=NULL WHERE event_id=?""",
                 (attempts, time.time() + delay, event_id),
             )
         self.db.execute("COMMIT")
@@ -302,9 +303,9 @@ class DirectTelegramTransport:
         try:
             with self.opener(request, timeout=10) as response:
                 body = json.loads(response.read().decode("utf-8"))
-                if body.get("ok") is True:
+                if isinstance(body, dict) and body.get("ok") is True:
                     return "sent", None
-                retry = body.get("parameters", {}).get("retry_after")
+                retry = body.get("parameters", {}).get("retry_after") if isinstance(body, dict) else None
                 return "retry", retry if isinstance(retry, int) else None
         except urllib.error.HTTPError as exc:
             if exc.code == 429:
