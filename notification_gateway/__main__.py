@@ -4,7 +4,7 @@ import os
 import sys
 
 from .gateway import Gateway, GatewayError, SQLiteState, DirectTelegramTransport, doctor
-from .adapters import LocalHandoffAdapter, OfflineReportAdapter
+from .adapters import DirectTelegramReportAdapter, LocalHandoffAdapter
 from .report import ReportGateway, ReportStore
 
 
@@ -22,7 +22,6 @@ def main() -> int:
     parser.add_argument("--scope-key")
     parser.add_argument("--report-id")
     parser.add_argument("--revision", type=int)
-    parser.add_argument("--offline-test-double", action="store_true")
     args = parser.parse_args()
     if args.command == "doctor":
         result = doctor()
@@ -73,13 +72,16 @@ def main() -> int:
         if not args.report_id or not args.revision:
             print("--report-id and --revision are required", file=sys.stderr)
             return 2
-        if args.offline_test_double:
-            adapters = {
-                "chatgpt": OfflineReportAdapter("chatgpt"),
-                "telegram": OfflineReportAdapter("telegram"),
-            }
-        else:
-            adapters = {"chatgpt": LocalHandoffAdapter(), "telegram": LocalHandoffAdapter()}
+        if not os.getenv("ALPHAMIND_TELEGRAM_BOT_TOKEN") or not os.getenv("ALPHAMIND_TELEGRAM_CHAT_ID"):
+            print("Telegram configuration is required; ChatGPT remains pending until platform receipt", file=sys.stderr)
+            return 2
+        adapters = {
+            "chatgpt": LocalHandoffAdapter(),
+            "telegram": DirectTelegramReportAdapter(DirectTelegramTransport(
+                os.environ["ALPHAMIND_TELEGRAM_BOT_TOKEN"],
+                os.environ["ALPHAMIND_TELEGRAM_CHAT_ID"],
+            )),
+        }
         print(ReportGateway(ReportStore(state), adapters).deliver_one(args.report_id, args.revision))
     else:
         transport = None

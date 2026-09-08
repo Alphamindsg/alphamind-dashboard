@@ -42,3 +42,17 @@ success never imply delivery.
 remains unconfirmed until a trusted platform adapter records a receipt bound to
 the report digest, destination, revision, and part. Credentials are never
 stored in reports or logs.
+
+Report delivery uses durable per-part leases and attempt IDs. The attempt intent
+is committed before an adapter is called; expired leases become `UNKNOWN` and
+are never automatically resent. Telegram reports use the typed Direct Telegram
+transport, while ChatGPT remains pending/blocked until a trusted platform
+adapter or operator attestation supplies a receipt bound to the report digest
+and attempt.
+
+The independent Claude review workflow is integrated from PR #24's
+`automation/claude-review-bridge` at source head
+`df1aca2ac9c845e21f4118ccdf31323db1ef48c5`, with checkout pinned to
+`d23441a48e516b6c34aea4fa41551a30e30af803` and Claude Code Action pinned to
+`50b26a71effe456d50842a733597491c5636cb6f`. This review-only integration does
+not modify PR #24.

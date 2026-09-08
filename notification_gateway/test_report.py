@@ -78,12 +78,12 @@ class ReportTests(unittest.TestCase):
         gateway = self.gateway(telegram=False)
         gateway.ingest(report())
         self.assertEqual(gateway.deliver_one("report-1", 1), "verified")
-        self.assertEqual(gateway.deliver_one("report-1", 1), "unknown")
+        self.assertEqual(gateway.deliver_one("report-1", 1), "blocked")
         self.assertEqual(
             self.store.db.execute(
                 "SELECT status FROM report_deliveries WHERE destination='telegram'"
             ).fetchone()[0],
-            "UNKNOWN",
+            "BLOCKED",
         )
         self.assertEqual(
             self.store.db.execute(
@@ -95,7 +95,7 @@ class ReportTests(unittest.TestCase):
     def test_chatgpt_failure_preserves_telegram_and_retry_is_independent(self):
         gateway = self.gateway(chat=False)
         gateway.ingest(report(priority="urgent"))
-        self.assertEqual(gateway.deliver_one("report-1", 1), "unknown")
+        self.assertEqual(gateway.deliver_one("report-1", 1), "blocked")
         # The other destination remains independently deliverable.
         self.assertEqual(gateway.deliver_one("report-1", 1), "verified")
         self.assertEqual(
@@ -123,18 +123,19 @@ class ReportTests(unittest.TestCase):
     def test_receipt_mismatch_and_local_handoff_are_not_success(self):
         gateway = self.gateway()
         gateway.ingest(report())
-        row = self.store.pending("report-1", 1)[0]
+        row = self.store.claim("report-1", 1)
+        self.assertIsNotNone(row)
         with self.assertRaises(GatewayError):
             self.store.record(
                 Report.from_mapping(report()), row,
                 self.gateway().adapters["chatgpt"].send(
-                    "wrong", 1, row["part"], row["body"], row["content_hash"]
+                    "wrong", 1, row["part"], row["body"], row["content_hash"], row["attempt_id"]
                 ),
+                row["attempt_id"], row["lease_token"],
             )
-        self.assertRaises(
-            RuntimeError,
-            LocalHandoffAdapter().send,
-            "report-1", 1, 0, "body", "digest",
+        self.assertEqual(
+            LocalHandoffAdapter().send("report-1", 1, 0, "body", "digest").reason,
+            "operator/platform confirmation is required",
         )
 
     def test_unicode_chunking_retains_all_sections(self):

@@ -1,0 +1,63 @@
+name: Claude Independent PR Review
+
+# Integrated from Alphamindsg/alphamind-dashboard#24 at
+# automation/claude-review-bridge@df1aca2ac9c845e21f4118ccdf31323db1ef48c5.
+# This feature branch integration does not modify PR #24.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  claude-review:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      actions: read
+    steps:
+      - name: Check out exact PR head
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Require Claude OAuth configuration
+        id: auth
+        shell: bash
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          if [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+            echo "Claude OAuth configuration detected; running independent review."
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::error::Claude independent review is REQUIRED but CLAUDE_CODE_OAUTH_TOKEN is not configured."
+            exit 1
+          fi
+      - name: Run independent Claude review
+        if: steps.auth.outputs.configured == 'true'
+        uses: anthropics/claude-code-action@50b26a71effe456d50842a733597491c5636cb6f # v1.0.210
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          allowed_bots: Copilot
+          track_progress: true
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+            EXACT HEAD SHA: ${{ github.event.pull_request.head.sha }}
+            Review the exact PR head independently. Do not modify code, merge, deploy,
+            authorize capital or production changes, or weaken gates. Report verified
+            defects, probable defects, CI problems, missing coverage, and release
+            blockers with severity and exact evidence. Finish with exactly one:
+            PASS, PASS WITH CONDITIONS, or FAIL. Post one concise top-level review.
+          claude_args: |
+            --allowed-tools "Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr checks:*)"

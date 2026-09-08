@@ -9,8 +9,14 @@ from .gateway import (
     TransportOutcome,
     format_telegram_message,
 )
-from .adapters import DryRunTransport, LocalHandoffAdapter, LocalProducer, OfflineReportAdapter
-from .report import DeliveryReceipt, DeliveryRetry, Report, ReportGateway, ReportStore
+from .adapters import (
+    DirectTelegramReportAdapter,
+    DryRunTransport,
+    LocalHandoffAdapter,
+    LocalProducer,
+    OfflineReportAdapter,
+)
+from .report import DeliveryBlocked, DeliveryReceipt, DeliveryRetry, Report, ReportGateway, ReportStore
 
 __all__ = [
     "DirectTelegramTransport",
@@ -22,11 +28,13 @@ __all__ = [
     "DryRunTransport",
     "LocalProducer",
     "DeliveryReceipt",
+    "DeliveryBlocked",
     "DeliveryRetry",
     "Report",
     "ReportGateway",
     "ReportStore",
     "OfflineReportAdapter",
     "LocalHandoffAdapter",
+    "DirectTelegramReportAdapter",
     "format_telegram_message",
 ]

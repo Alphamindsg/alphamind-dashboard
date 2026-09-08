@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Mapping
 
 from .gateway import Gateway, TransportOutcome
-from .report import DeliveryReceipt
+from .report import DeliveryBlocked, DeliveryReceipt, DeliveryRetry, DeliveryUnknown
 
 
 class LocalProducer:
@@ -41,13 +41,14 @@ class OfflineReportAdapter:
         self.available = available
         self.calls: list[tuple[str, int, int, str]] = []
 
-    def send(self, report_id: str, revision: int, part: int, body: str, content_hash: str):
+    def send(self, report_id: str, revision: int, part: int, body: str, content_hash: str,
+             attempt_id: str = ""):
         if not self.available:
             raise RuntimeError("destination unavailable")
         self.calls.append((report_id, revision, part, body))
         return DeliveryReceipt(
             self.destination, report_id, revision, part, content_hash,
-            f"{self.destination}-{report_id}-{revision}-{part}",
+            f"{self.destination}-{report_id}-{revision}-{part}", attempt_id,
         )
 
 
@@ -55,4 +56,25 @@ class LocalHandoffAdapter:
     """Explicitly unconfirmed handoff; it never fabricates a platform receipt."""
 
     def send(self, *_args: Any, **_kwargs: Any):
-        raise RuntimeError("operator/platform confirmation is required")
+        return DeliveryBlocked("operator/platform confirmation is required")
+
+
+class DirectTelegramReportAdapter:
+    """Maps the existing typed Telegram transport to report delivery receipts."""
+
+    def __init__(self, transport):
+        self.transport = transport
+
+    def send(self, report_id: str, revision: int, part: int, body: str, content_hash: str,
+             attempt_id: str = ""):
+        outcome = self.transport.send(body)
+        if outcome.kind == "sent" and outcome.message_id and outcome.chat_id and outcome.text == body:
+            return DeliveryReceipt(
+                "telegram", report_id, revision, part, content_hash,
+                str(outcome.message_id), attempt_id
+            )
+        if outcome.kind == "retry":
+            return DeliveryRetry(outcome.retry_after)
+        if outcome.kind in {"unknown", "rejected"}:
+            return DeliveryUnknown(outcome.kind)
+        return DeliveryUnknown()
