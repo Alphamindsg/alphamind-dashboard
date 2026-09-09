@@ -74,6 +74,8 @@ class ReviewedCollectionTests(unittest.TestCase):
         for name in ("app.js", "memory-engine.js", "command-center-regression-checks.js",
                      "memory-mvp-regression-checks.js", "security-regression-checks.js"):
             (self.repo / name).write_text('console.log("COMMITTED_SOURCE");\n', encoding="utf-8")
+        (self.repo / "nested").mkdir()
+        (self.repo / "nested" / "candidate.txt").write_text("nested committed evidence\n", encoding="utf-8")
         self.commit()
 
     def git(self, *args):
