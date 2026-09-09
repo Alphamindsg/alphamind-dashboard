@@ -154,7 +154,7 @@ def collect(repo, out, baseline, node):
             return {str(p.relative_to(snapshot)): digest(p.read_bytes()) for p in snapshot.rglob("*") if p.is_file()}
         before = snapshot_hashes()
         expected = {}
-        entries = subprocess.check_output(["git", "-C", str(repo), "ls-tree", "-rz", "--full-tree", head])
+        entries = subprocess.check_output(["git", "-C", str(repo), "ls-tree", "-r", "-z", "--full-tree", head])
         for entry in entries.split(b"\0"):
             if not entry:
                 continue
