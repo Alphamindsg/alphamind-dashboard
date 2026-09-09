@@ -17,18 +17,44 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      BASELINE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
     steps:
       - name: Checkout exact candidate
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          ref: ${{ env.EXPECTED_HEAD_SHA }}
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Verify exact head identity
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          printf 'exact_head=%s\n' "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          printf 'exact_head=%s\n' "$EXPECTED_HEAD_SHA"
+
+      - name: Generate fail-closed exact-candidate evidence bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence_dir="$(mktemp -d)"
+          set +e
+          python3 .agents/skills/alphamind-evidence/scripts/evidence.py collect-dashboard \
+            --repo "$GITHUB_WORKSPACE" \
+            --out "$evidence_dir" \
+            --baseline "$BASELINE_SHA" > "$RUNNER_TEMP/release-evidence-result.json"
+          result=$?
+          set -e
+          test "$result" -eq 2
+          test -s "$evidence_dir/bundle.json"
+          python3 -c 'import json,sys; b=json.load(open(sys.argv[1],encoding="utf-8")); assert b["candidate_sha"]==sys.argv[2]; assert b["production_authorization"]["status"]=="NOT_REQUESTED"' "$evidence_dir/bundle.json" "$EXPECTED_HEAD_SHA"
+          {
+            echo "## Exact-candidate Release Evidence"
+            echo
+            cat "$RUNNER_TEMP/release-evidence-result.json"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Run evidence collector and validator tests
         shell: bash
