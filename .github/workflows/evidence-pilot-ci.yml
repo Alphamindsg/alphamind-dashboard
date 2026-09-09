@@ -47,6 +47,7 @@ jobs:
             --baseline "$BASELINE_SHA" > "$RUNNER_TEMP/release-evidence-result.json"
           result=$?
           set -e
+          cat "$RUNNER_TEMP/release-evidence-result.json"
           test "$result" -eq 2
           test -s "$evidence_dir/bundle.json"
           python3 -c 'import json,sys; b=json.load(open(sys.argv[1],encoding="utf-8")); assert b["candidate_sha"]==sys.argv[2]; assert b["production_authorization"]["status"]=="NOT_REQUESTED"' "$evidence_dir/bundle.json" "$EXPECTED_HEAD_SHA"
