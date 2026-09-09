@@ -32,13 +32,25 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Keep these values synchronized with the pinned uses: line below.
+          tag_ref="v1.0.210"
+          expected_tag_object="50b26a71effe456d50842a733597491c5636cb6f"
+          expected_commit="a874e9ecd7bb36efdad65429c6b35815f5a08f10"
+          fail_provenance() {
+            {
+              echo "## Claude Independent PR Review: PROVENANCE_CHECK_FAILED"
+              echo
+              echo "The pinned Claude action release provenance could not be verified. This is distinct from OAuth configuration."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          }
           refs="$(git ls-remote https://github.com/anthropics/claude-code-action.git \
-            'refs/tags/v1.0.210' 'refs/tags/v1.0.210^{}')"
-          tag_object="$(awk '$2 == "refs/tags/v1.0.210" { print $1 }' <<< "$refs")"
-          peeled_commit="$(awk '$2 == "refs/tags/v1.0.210^{}" { print $1 }' <<< "$refs")"
-          test "$tag_object" = "50b26a71effe456d50842a733597491c5636cb6f"
-          test "$peeled_commit" = "a874e9ecd7bb36efdad65429c6b35815f5a08f10"
-          printf 'tag_object=%s\npeeled_commit=%s\n' "$tag_object" "$peeled_commit"
+            "refs/tags/$tag_ref" "refs/tags/$tag_ref^{}")" || fail_provenance
+          tag_object="$(awk -v ref="refs/tags/$tag_ref" '$2 == ref { print $1 }' <<< "$refs")"
+          peeled_commit="$(awk -v ref="refs/tags/$tag_ref^{}" '$2 == ref { print $1 }' <<< "$refs")"
+          [ "$tag_object" = "$expected_tag_object" ] || fail_provenance
+          [ "$peeled_commit" = "$expected_commit" ] || fail_provenance
+          printf 'tag=%s\ntag_object=%s\npeeled_commit=%s\n' "$tag_ref" "$tag_object" "$peeled_commit"
 
       - name: Require Claude OAuth configuration
         id: auth
