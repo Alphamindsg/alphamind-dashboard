@@ -34,99 +34,11 @@ jobs:
           set -euo pipefail
           refs="$(git ls-remote https://github.com/anthropics/claude-code-action.git \
             'refs/tags/v1.0.210' 'refs/tags/v1.0.210^{}')"
-          grep -Fq 
-        id: auth
-        shell: bash
-        env:
-          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-        run: |
-          if [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
-            echo "configured=true" >> "$GITHUB_OUTPUT"
-            echo "CLAUDE_CODE_OAUTH_TOKEN detected; running independent review."
-          else
-            echo "configured=false" >> "$GITHUB_OUTPUT"
-            echo "::error::Claude independent review is REQUIRED but CLAUDE_CODE_OAUTH_TOKEN is not configured."
-            {
-              echo "## Claude Independent PR Review: BLOCKED"
-              echo
-              echo "No independent Claude review was performed because the repository secret \`CLAUDE_CODE_OAUTH_TOKEN\` is not configured."
-              echo "Do not treat this workflow as a review PASS. Repository-owner activation is required."
-            } >> "$GITHUB_STEP_SUMMARY"
-            exit 1
-          fi
-
-      - name: Run independent Claude review
-        if: steps.auth.outputs.configured == 'true'
-        uses: anthropics/claude-code-action@a874e9ecd7bb36efdad65429c6b35815f5a08f10 # v1.0.210
-        with:
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          track_progress: true
-          prompt: |
-            REPO: ${{ github.repository }}
-            PR NUMBER: ${{ github.event.pull_request.number }}
-            EXACT HEAD SHA: ${{ github.event.pull_request.head.sha }}
-
-            Act as an independent senior software, architecture, security, CI, release, and investment-systems reviewer.
-            Do not modify repository code, merge, deploy, authorize trading/capital, mutate production systems, or weaken quality/security/release gates.
-            Do not assume ChatGPT, Codex, Copilot, or any prior agent conclusion is correct.
-
-            Review the exact PR head and relevant CI evidence. For AlphaMind/Dashboard prioritize separation of presentation from canonical truth, investment-policy and authority boundaries, evidence/provenance/freshness, deterministic cent-accurate economics, portfolio/risk controls, accounting/reconciliation interfaces, bot-control-plane safety, plugin/tool authority, exact-head release evidence, and prevention of dashboard state from becoming an unauthorized source of truth or capital authority.
-
-            Separate findings into Verified defects, Probable defects requiring confirmation, CI/infrastructure problems, Missing test coverage, and Release blockers.
-            Rank every material finding Critical, High, Medium, or Low with exact evidence and the smallest safe remediation. Explicitly mark uncertainty and suspected false positives.
-            Finish with exactly one disposition: PASS, PASS WITH CONDITIONS, or FAIL. A green build alone is not sufficient.
-            Post one concise top-level PR comment containing the structured review and disposition.
-          claude_args: |
-            --allowed-tools "Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr checks:*)"
-50b26a71effe456d50842a733597491c5636cb6f\trefs/tags/v1.0.210' <<< "$refs"
-          grep -Fq 
-        id: auth
-        shell: bash
-        env:
-          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-        run: |
-          if [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
-            echo "configured=true" >> "$GITHUB_OUTPUT"
-            echo "CLAUDE_CODE_OAUTH_TOKEN detected; running independent review."
-          else
-            echo "configured=false" >> "$GITHUB_OUTPUT"
-            echo "::error::Claude independent review is REQUIRED but CLAUDE_CODE_OAUTH_TOKEN is not configured."
-            {
-              echo "## Claude Independent PR Review: BLOCKED"
-              echo
-              echo "No independent Claude review was performed because the repository secret \`CLAUDE_CODE_OAUTH_TOKEN\` is not configured."
-              echo "Do not treat this workflow as a review PASS. Repository-owner activation is required."
-            } >> "$GITHUB_STEP_SUMMARY"
-            exit 1
-          fi
-
-      - name: Run independent Claude review
-        if: steps.auth.outputs.configured == 'true'
-        uses: anthropics/claude-code-action@a874e9ecd7bb36efdad65429c6b35815f5a08f10 # v1.0.210
-        with:
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          track_progress: true
-          prompt: |
-            REPO: ${{ github.repository }}
-            PR NUMBER: ${{ github.event.pull_request.number }}
-            EXACT HEAD SHA: ${{ github.event.pull_request.head.sha }}
-
-            Act as an independent senior software, architecture, security, CI, release, and investment-systems reviewer.
-            Do not modify repository code, merge, deploy, authorize trading/capital, mutate production systems, or weaken quality/security/release gates.
-            Do not assume ChatGPT, Codex, Copilot, or any prior agent conclusion is correct.
-
-            Review the exact PR head and relevant CI evidence. For AlphaMind/Dashboard prioritize separation of presentation from canonical truth, investment-policy and authority boundaries, evidence/provenance/freshness, deterministic cent-accurate economics, portfolio/risk controls, accounting/reconciliation interfaces, bot-control-plane safety, plugin/tool authority, exact-head release evidence, and prevention of dashboard state from becoming an unauthorized source of truth or capital authority.
-
-            Separate findings into Verified defects, Probable defects requiring confirmation, CI/infrastructure problems, Missing test coverage, and Release blockers.
-            Rank every material finding Critical, High, Medium, or Low with exact evidence and the smallest safe remediation. Explicitly mark uncertainty and suspected false positives.
-            Finish with exactly one disposition: PASS, PASS WITH CONDITIONS, or FAIL. A green build alone is not sufficient.
-            Post one concise top-level PR comment containing the structured review and disposition.
-          claude_args: |
-            --allowed-tools "Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr checks:*)"
-a874e9ecd7bb36efdad65429c6b35815f5a08f10\trefs/tags/v1.0.210^{}' <<< "$refs"
-          printf '%s\n' "$refs"
+          tag_object="$(awk '$2 == "refs/tags/v1.0.210" { print $1 }' <<< "$refs")"
+          peeled_commit="$(awk '$2 == "refs/tags/v1.0.210^{}" { print $1 }' <<< "$refs")"
+          test "$tag_object" = "50b26a71effe456d50842a733597491c5636cb6f"
+          test "$peeled_commit" = "a874e9ecd7bb36efdad65429c6b35815f5a08f10"
+          printf 'tag_object=%s\npeeled_commit=%s\n' "$tag_object" "$peeled_commit"
 
       - name: Require Claude OAuth configuration
         id: auth
