@@ -39,7 +39,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          evidence_dir="$(mktemp -d)"
+          evidence_root="$(mktemp -d)"
+          evidence_dir="$evidence_root/bundle"
           set +e
           python3 .agents/skills/alphamind-evidence/scripts/evidence.py collect-dashboard \
             --repo "$GITHUB_WORKSPACE" \
