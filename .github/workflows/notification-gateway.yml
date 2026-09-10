@@ -27,6 +27,7 @@ jobs:
           python3 -m py_compile notification_gateway/*.py
           python3 -m unittest notification_gateway.test_gateway
           python3 -m unittest notification_gateway.test_report
+          python3 -m unittest notification_gateway.test_claude_workflow
           python3 telegram-gateway-regression-checks.py
           node --check app.js
           node --check memory-engine.js

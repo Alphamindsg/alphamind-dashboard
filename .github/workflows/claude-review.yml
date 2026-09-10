@@ -4,16 +4,23 @@ name: Claude Independent PR Review
 # automation/claude-review-bridge@df1aca2ac9c845e21f4118ccdf31323db1ef48c5.
 # This feature branch integration does not modify PR #24.
 on:
+  push:
+    branches:
+      - copilot/notify-001-shared-telegram-gateway
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
 
 concurrency:
-  group: claude-review-${{ github.event.pull_request.number }}
+  group: claude-review-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 
 jobs:
   claude-review:
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: >-
+      (github.event_name == 'push' &&
+       github.ref_name == 'copilot/notify-001-shared-telegram-gateway') ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 25
     permissions:
@@ -22,12 +29,59 @@ jobs:
       issues: write
       actions: read
     steps:
+      - name: Resolve exact candidate PR
+        id: candidate
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_SHA: ${{ github.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          expected_branch='copilot/notify-001-shared-telegram-gateway'
+          if [ "$EVENT_NAME" = pull_request ]; then
+            test "$PR_REPO" = "$REPOSITORY"
+            test "${{ github.event.pull_request.head.ref }}" = "$expected_branch"
+            candidate_number="$PR_NUMBER"
+            candidate_sha="$PR_SHA"
+          else
+            test "$GITHUB_REF_NAME" = "$expected_branch"
+            mapfile -t candidates < <(
+              gh pr list --repo "$REPOSITORY" --state open \
+                --head "${REPOSITORY%%/*}:$expected_branch" \
+                --json number,headRefName,headRefOid,headRepository \
+                --jq '.[] | select(.headRefName == "'"$expected_branch"'") |
+                  select(.headRepository.fullName == "'"$REPOSITORY"'") |
+                  "\(.number)\t\(.headRefOid)"'
+            )
+            test "${#candidates[@]}" -eq 1
+            IFS=$'\t' read -r candidate_number candidate_sha <<< "${candidates[0]}"
+            test "$candidate_sha" = "$PUSH_SHA"
+          fi
+          test -n "$candidate_number"
+          test -n "$candidate_sha"
+          printf 'number=%s\nsha=%s\n' "$candidate_number" "$candidate_sha" >> "$GITHUB_OUTPUT"
       - name: Check out exact PR head
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ steps.candidate.outputs.sha }}
           fetch-depth: 1
           persist-credentials: false
+      - name: Verify exact candidate checkout
+        env:
+          EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          if [ "$EVENT_NAME" = push ]; then
+            test "$PUSH_SHA" = "$EXPECTED_SHA"
+          fi
       - name: Require Claude OAuth configuration
         id: auth
         shell: bash
@@ -52,8 +106,8 @@ jobs:
           track_progress: true
           prompt: |
             REPO: ${{ github.repository }}
-            PR NUMBER: ${{ github.event.pull_request.number }}
-            EXACT HEAD SHA: ${{ github.event.pull_request.head.sha }}
+            PR NUMBER: ${{ steps.candidate.outputs.number }}
+            EXACT HEAD SHA: ${{ steps.candidate.outputs.sha }}
             Review the exact PR head independently. Do not modify code, merge, deploy,
             authorize capital or production changes, or weaken gates. Report verified
             defects, probable defects, CI problems, missing coverage, and release
