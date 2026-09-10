@@ -60,18 +60,13 @@ ALPHAMIND_NOTIFICATION_STATE=/absolute/durable/path.sqlite3 \
 This only records `GENERATED`. It does not claim either destination delivered.
 Production delivery requires explicit ChatGPT and Telegram adapters that return
 platform-confirmed receipts bound to the report ID, revision, part, and content
-hash. For offline contract testing only:
-
-```bash
-ALPHAMIND_NOTIFICATION_STATE=/absolute/durable/path.sqlite3 \
-  python -m notification_gateway report-worker --report-id report-1 \
-  --revision 1 --offline-test-double
-```
-
-The local handoff adapter is intentionally unconfirmed and results in
-`UNKNOWN`; it cannot fabricate ChatGPT success. Telegram failures preserve the
-canonical report and ChatGPT delivery independently. Do not activate live
-sends until protected approval is recorded.
+hash. Offline contract testing uses the standard-library test suite with a temporary
+isolated SQLite path and injected `OfflineReportAdapter`; it is not a
+production CLI mode and cannot write the live durable state. The local handoff
+adapter is intentionally unconfirmed and results in `BLOCKED`; it cannot
+fabricate ChatGPT success. Telegram failures preserve the canonical report and
+ChatGPT delivery independently. Do not activate live sends until protected
+approval is recorded.
 
 The base event CLI also fails closed unless `ALPHAMIND_PRODUCER_AUTH` and
 `ALPHAMIND_ALLOWED_REPOS` are configured. A paused event resumes when a

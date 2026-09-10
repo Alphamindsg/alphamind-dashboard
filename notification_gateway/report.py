@@ -337,9 +337,9 @@ class ReportStore:
         row = self.db.execute(
             """SELECT status FROM report_deliveries WHERE report_id=? AND revision=?
                AND destination=? AND part=? AND status='LEASED' AND lease_token=?
-               AND attempt_id=?""",
+               AND attempt_id=? AND lease_until>?""",
             (report.report_id, report.revision, delivery["destination"], delivery["part"],
-             lease_token, attempt_id),
+             lease_token, attempt_id, self.state.clock()),
         ).fetchone()
         if not row:
             self.db.execute("ROLLBACK")
@@ -364,29 +364,43 @@ class ReportStore:
             f"SELECT destination,status,COUNT(*) AS count FROM report_deliveries{clauses} GROUP BY destination,status",
             args,
         ).fetchall()
+        stalled = self.db.execute(
+            f"""SELECT COUNT(*) AS count FROM report_deliveries
+                {clauses + (' AND ' if clauses else ' WHERE ')}
+                status='LEASED' AND lease_until<=?""",
+            (*args, self.state.clock()),
+        ).fetchone()["count"]
         return {
             "deliveries": [
                 {"destination": row["destination"], "status": row["status"], "count": row["count"]}
                 for row in rows
             ],
-            "state": "BLOCKED" if any(row["status"] in {"UNKNOWN", "DEAD", "BLOCKED"} for row in rows)
+            "stalled": stalled,
+            "state": "BLOCKED" if stalled or any(row["status"] in {"UNKNOWN", "DEAD", "BLOCKED"} for row in rows)
             else "READY",
         }
 
-    def retry(self, report: Report, delivery: Mapping[str, Any], reason: str = "") -> str:
+    def retry(self, report: Report, delivery: Mapping[str, Any], reason: str = "",
+              retry_after: int | None = None) -> str:
         self.db.execute("BEGIN IMMEDIATE")
         row = self.db.execute(
-            "SELECT status, attempts FROM report_deliveries WHERE report_id=? AND revision=? AND destination=? AND part=?",
+            """SELECT status, attempts, lease_token, lease_until FROM report_deliveries
+               WHERE report_id=? AND revision=? AND destination=? AND part=?""",
             (report.report_id, report.revision, delivery["destination"], delivery["part"]),
         ).fetchone()
-        if not row or row["status"] not in {"PENDING", "RETRY"}:
+        if not row or row["status"] != "LEASED" or row["lease_token"] != delivery.get("lease_token") \
+                or row["lease_until"] <= self.state.clock():
             self.db.execute("ROLLBACK")
-            raise GatewayError("delivery is not retryable")
+            raise GatewayError("stale delivery lease")
         attempts = row["attempts"]
         status = "DEAD" if attempts >= 5 else "RETRY"
+        delay = retry_after if type(retry_after) is int and retry_after >= 0 else min(7200, 2 ** attempts)
         self.db.execute(
-            "UPDATE report_deliveries SET status=?, attempts=?, last_error=? WHERE report_id=? AND revision=? AND destination=? AND part=?",
-            (status, attempts, _safe_text(reason, 256), report.report_id, report.revision,
+            """UPDATE report_deliveries SET status=?, attempts=?, last_error=?,
+               next_attempt=?, lease_until=0, lease_token=NULL
+               WHERE report_id=? AND revision=? AND destination=? AND part=?""",
+            (status, attempts, _safe_text(reason, 256), self.state.clock() + delay,
+             report.report_id, report.revision,
              delivery["destination"], delivery["part"]),
         )
         self._audit(report, delivery["destination"], delivery["part"], status, reason)
@@ -420,17 +434,9 @@ class ReportGateway:
                 row["attempt_id"]
             )
             if isinstance(result, DeliveryRetry):
-                self.store.db.execute("BEGIN IMMEDIATE")
-                self.store.db.execute(
-                    """UPDATE report_deliveries SET status='RETRY', next_attempt=?,
-                       last_error=?, lease_token=NULL WHERE report_id=? AND revision=?
-                       AND destination=? AND part=? AND status='LEASED' AND lease_token=?""",
-                    (self.store.state.clock() + (result.retry_after or min(7200, 2 ** row["attempts"])),
-                     "provider retry", report_id, revision, row["destination"], row["part"],
-                     row["lease_token"]),
+                return self.store.retry(
+                    report, row, "provider retry", result.retry_after
                 )
-                self.store.db.execute("COMMIT")
-                return "retry"
             if isinstance(result, DeliveryUnknown):
                 return self.store.record(report, row, None, row["attempt_id"], row["lease_token"])
             if isinstance(result, DeliveryBlocked):

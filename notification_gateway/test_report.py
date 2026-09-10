@@ -137,6 +137,15 @@ class ReportTests(unittest.TestCase):
             LocalHandoffAdapter().send("report-1", 1, 0, "body", "digest").reason,
             "operator/platform confirmation is required",
         )
+        self.store.db.execute(
+            "UPDATE report_deliveries SET lease_until=0 WHERE report_id='report-1' AND destination=?",
+            (row["destination"],),
+        )
+        with self.assertRaises(GatewayError):
+            self.store.record(
+                Report.from_mapping(report()), row, None,
+                row["attempt_id"], row["lease_token"],
+            )
 
     def test_unicode_chunking_retains_all_sections(self):
         raw = report()
@@ -147,6 +156,44 @@ class ReportTests(unittest.TestCase):
         self.assertIn("CHANGES SINCE PREVIOUS", joined)
         self.assertIn("OWNER ACTIONS", joined)
         self.assertTrue(all(len(part.encode("utf-16-le")) // 2 <= 4096 for part in parts))
+
+    def test_two_workers_cannot_claim_same_report_part_and_retry_budget_ends(self):
+        gateway = self.gateway()
+        gateway.ingest(report(report_id="race"))
+        first = self.store.claim("race", 1)
+        second = self.store.claim("race", 1)
+        self.assertIsNotNone(first)
+        self.assertIsNotNone(second)
+        self.assertNotEqual(
+            (first["destination"], first["part"]),
+            (second["destination"], second["part"]),
+        )
+
+        self.store.ingest(Report.from_mapping(report(report_id="retry-race")))
+        retry = OfflineReportAdapter("chatgpt")
+        retry.send = lambda *_args: DeliveryRetry(0)
+        retry_gateway = ReportGateway(
+            self.store, {"chatgpt": retry, "telegram": OfflineReportAdapter("telegram")}
+        )
+        for _ in range(5):
+            self.store.db.execute(
+                "UPDATE report_deliveries SET next_attempt=0 WHERE report_id='retry-race' AND status='RETRY'"
+            )
+            if self.store.db.execute(
+                "SELECT status FROM report_deliveries WHERE report_id='retry-race' AND destination='chatgpt'"
+            ).fetchone()[0] == "LEASED":
+                break
+            retry_gateway.deliver_one("retry-race", 1)
+        self.store.db.execute(
+            "UPDATE report_deliveries SET next_attempt=0 WHERE report_id='retry-race' AND status='RETRY'"
+        )
+        retry_gateway.deliver_one("retry-race", 1)
+        self.assertEqual(
+            self.store.db.execute(
+                "SELECT status FROM report_deliveries WHERE report_id='retry-race' AND destination='chatgpt'"
+            ).fetchone()[0],
+            "DEAD",
+        )
 
 
 if __name__ == "__main__":

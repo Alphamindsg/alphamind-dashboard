@@ -91,6 +91,35 @@ class GatewayTests(unittest.TestCase):
             format_telegram_message(huge)
         with self.assertRaises(GatewayError):
             self.gateway.submit({**event(), "unexpected": "field"})
+        credential = event(summary='{"password":"synthetic-secret"}')
+        self.gateway.submit(credential)
+        stored = self.state.db.execute("SELECT payload FROM events").fetchone()[0]
+        self.assertNotIn("synthetic-secret", stored)
+
+    def test_equal_sequence_conflicts_and_oversized_events_fail_before_queue(self):
+        self.gateway.submit(event())
+        with self.assertRaises(GatewayError):
+            self.gateway.submit(event(event_id="different"))
+        oversized = event(summary="😀" * 3000)
+        with self.assertRaises(GatewayError):
+            self.gateway.submit(oversized)
+        self.assertEqual(
+            self.state.db.execute("SELECT COUNT(*) FROM outbox").fetchone()[0], 1
+        )
+
+    def test_leased_older_version_is_fenced_before_send(self):
+        self.gateway.submit(event())
+        item = self.state.claim()
+        self.assertIsNotNone(item)
+        self.gateway.submit(event(event_id="new", sequence=2))
+        with self.assertRaises(GatewayError):
+            self.state.record_intent(item, "bounded text")
+        self.assertEqual(
+            self.state.db.execute(
+                "SELECT status FROM outbox WHERE scope_key=?", (item["scope_key"],)
+            ).fetchone()[0],
+            "SUPERSEDED",
+        )
 
     def test_scoped_dedup_conflict_stale_and_concurrent_connections(self):
         fixed = event(occurred_at="2026-09-08T09:00:00+00:00")

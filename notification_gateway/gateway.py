@@ -43,6 +43,10 @@ PEM_RE = re.compile(r"-----BEGIN [^-]+-----.*?-----END [^-]+-----", re.S)
 BARE_TOKEN_RE = re.compile(r"\b(?:sk|gh[pousr]|xox[baprs])-[A-Za-z0-9_-]{8,}\b")
 GH_TOKEN_RE = re.compile(r"\bgh[pousr]_[A-Za-z0-9_]{8,}\b")
 TELEGRAM_TOKEN_RE = re.compile(r"\b\d{6,}:[A-Za-z0-9_-]{20,}\b")
+QUOTED_CREDENTIAL_RE = re.compile(
+    r'(["\'])(?:password|passwd|token|secret|api[_-]?key|authorization)\1\s*:\s*(["\'])[^"\']*\2',
+    re.IGNORECASE,
+)
 
 
 class GatewayError(ValueError):
@@ -68,6 +72,10 @@ def _safe_text(value: str, limit: int = 1000) -> str:
     value = BARE_TOKEN_RE.sub("[CREDENTIAL REDACTED]", value)
     value = GH_TOKEN_RE.sub("[CREDENTIAL REDACTED]", value)
     value = TELEGRAM_TOKEN_RE.sub("[CREDENTIAL REDACTED]", value)
+    value = QUOTED_CREDENTIAL_RE.sub(
+        lambda match: f'{match.group(1)}[CREDENTIAL REDACTED]{match.group(1)}',
+        value,
+    )
     for name in ("ALPHAMIND_TELEGRAM_BOT_TOKEN", "ALPHAMIND_PRODUCER_AUTH"):
         configured = os.getenv(name)
         if configured:
@@ -272,7 +280,16 @@ class SQLiteState:
                 (event.producer, repo, event.business_id)).fetchone()["n"]
             if prior is not None and event.sequence < prior:
                 raise GatewayError("stale event")
+            equal = self.db.execute(
+                """SELECT event_id FROM events
+                   WHERE producer=? AND repo=? AND business_id=? AND sequence=?""",
+                (event.producer, repo, event.business_id, event.sequence),
+            ).fetchone()
+            if equal and equal["event_id"] != event.event_id:
+                raise GatewayError("conflicting equal incident version")
             status = "QUEUED" if event.should_notify() else "SILENT"
+            if event.should_notify():
+                format_telegram_message(event)
             self.db.execute("INSERT INTO events VALUES (?,?,?,?,?,?,?,?,?,?)",
                             (scope_key, event.producer, repo, event.business_id, event.event_id,
                              fingerprint, event.canonical(), event.sequence, status, self.clock()))
@@ -356,6 +373,24 @@ class SQLiteState:
         if not row or row["status"] != "LEASED" or row["lease_token"] != item["lease_token"] or row["lease_until"] <= self.clock():
             self.db.execute("ROLLBACK")
             raise GatewayError("stale lease")
+        event = json.loads(item["payload"])
+        current = self.db.execute(
+            """SELECT MAX(sequence) AS sequence FROM events
+               WHERE producer=? AND repo=? AND business_id=?""",
+            (event["producer"], event["provenance"]["repo"], event["business_id"]),
+        ).fetchone()["sequence"]
+        if current != event["sequence"]:
+            self.db.execute(
+                "UPDATE outbox SET status='SUPERSEDED', lease_token=NULL WHERE scope_key=?",
+                (item["scope_key"],),
+            )
+            self.db.execute(
+                "UPDATE events SET status='SUPERSEDED' WHERE scope_key=?",
+                (item["scope_key"],),
+            )
+            self._audit(item["scope_key"], "SUPERSEDED", "newer incident version before send")
+            self.db.execute("COMMIT")
+            raise GatewayError("stale incident version")
         attempt = int(item["attempts"]) + 1
         self.db.execute("INSERT INTO send_intents VALUES (?,?,?,?,?)",
                         (item["scope_key"], attempt, digest, text, self.clock()))
@@ -371,6 +406,24 @@ class SQLiteState:
         if not row:
             self.db.execute("ROLLBACK")
             raise GatewayError("stale lease")
+        event = json.loads(item["payload"])
+        current = self.db.execute(
+            """SELECT MAX(sequence) AS sequence FROM events
+               WHERE producer=? AND repo=? AND business_id=?""",
+            (event["producer"], event["provenance"]["repo"], event["business_id"]),
+        ).fetchone()["sequence"]
+        if current != event["sequence"]:
+            self.db.execute(
+                "UPDATE outbox SET status='UNKNOWN', lease_token=NULL WHERE scope_key=?",
+                (item["scope_key"],),
+            )
+            self.db.execute(
+                "UPDATE events SET status='UNKNOWN' WHERE scope_key=?",
+                (item["scope_key"],),
+            )
+            self._audit(item["scope_key"], "UNKNOWN", "superseded after possible send")
+            self.db.execute("COMMIT")
+            raise GatewayError("stale incident after possible send")
         attempt = row["attempts"] + 1
         intent = self.db.execute("SELECT * FROM send_intents WHERE scope_key=? AND attempt=?",
                                  (item["scope_key"], attempt)).fetchone()
