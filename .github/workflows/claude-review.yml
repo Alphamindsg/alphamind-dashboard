@@ -51,12 +51,10 @@ jobs:
           else
             test "$GITHUB_REF_NAME" = "$expected_branch"
             mapfile -t candidates < <(
-              gh pr list --repo "$REPOSITORY" --state open \
-                --head "${REPOSITORY%%/*}:$expected_branch" \
-                --json number,headRefName,headRefOid,headRepository \
-                --jq '.[] | select(.headRefName == "'"$expected_branch"'") |
-                  select(.headRepository.fullName == "'"$REPOSITORY"'") |
-                  "\(.number)\t\(.headRefOid)"'
+              gh api --paginate "repos/$REPOSITORY/pulls?state=open&per_page=100" \
+                --jq '.[] | [.number, .head.repo.full_name, .head.ref, .head.sha] | @tsv' |
+                awk -F '\t' -v repo="$REPOSITORY" -v branch="$expected_branch" \
+                  -v sha="$PUSH_SHA" '$2 == repo && $3 == branch && $4 == sha { print $1 "\t" $4 }'
             )
             test "${#candidates[@]}" -eq 1
             IFS=$'\t' read -r candidate_number candidate_sha <<< "${candidates[0]}"
