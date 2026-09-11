@@ -1,19 +1,18 @@
-name: Claude Independent PR Review
+name: Claude Exact-Head Review Request
 
-# Integrated from Alphamindsg/alphamind-dashboard#24 at
-# automation/claude-review-bridge@df1aca2ac9c845e21f4118ccdf31323db1ef48c5.
-# This feature branch integration does not modify PR #24.
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+  issue_comment:
+    types: [created]
 
 concurrency:
-  group: claude-review-${{ github.event.pull_request.number || github.event.issue.number }}
+  group: claude-review-request-${{ github.event.issue.number }}
   cancel-in-progress: true
 
 jobs:
   claude-review:
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: >-
+      github.event.issue.pull_request &&
+      github.event.comment.user.login == github.repository_owner
     runs-on: ubuntu-latest
     timeout-minutes: 25
     permissions:
@@ -27,31 +26,24 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_SHA: ${{ github.event.pull_request.head.sha }}
-          PR_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          COMMENT_USER: ${{ github.event.comment.user.login }}
           EXPECTED_BRANCH: copilot/notify-001-shared-telegram-gateway
         run: |
           set -euo pipefail
-          test "$PR_REPO" = "$GITHUB_REPOSITORY"
-          test "${{ github.event.pull_request.head.ref }}" = "$EXPECTED_BRANCH"
-          test -n "$PR_NUMBER"
-          test -n "$PR_SHA"
-          printf 'number=%s\nsha=%s\n' "$PR_NUMBER" "$PR_SHA" >> "$GITHUB_OUTPUT"
-      - name: Check out exact PR head
-        if: github.event_name == 'pull_request'
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          ref: ${{ steps.candidate.outputs.sha }}
-          fetch-depth: 1
-          persist-credentials: false
-      - name: Verify exact candidate checkout
-        if: github.event_name == 'pull_request'
-        env:
-          EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
-        run: |
-          set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test "$COMMENT_USER" = "$GITHUB_REPOSITORY_OWNER"
+          [[ "$COMMENT_BODY" =~ ^@claude[[:space:]]+review[[:space:]]+([0-9a-fA-F]{40})[[:space:]]*$ ]]
+          requested_sha="${BASH_REMATCH[1],,}"
+          pr_json="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER")"
+          candidate_number="$(jq -r '.number' <<< "$pr_json")"
+          candidate_sha="$(jq -r '.head.sha' <<< "$pr_json")"
+          candidate_repo="$(jq -r '.head.repo.full_name' <<< "$pr_json")"
+          candidate_branch="$(jq -r '.head.ref' <<< "$pr_json")"
+          test "$candidate_repo" = "$GITHUB_REPOSITORY"
+          test "$candidate_branch" = "$EXPECTED_BRANCH"
+          test "$candidate_sha" = "$requested_sha"
+          printf 'number=%s\nsha=%s\n' "$candidate_number" "$candidate_sha" >> "$GITHUB_OUTPUT"
       - name: Require Claude OAuth configuration
         id: auth
         shell: bash
@@ -60,7 +52,6 @@ jobs:
         run: |
           if [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
             echo "configured=true" >> "$GITHUB_OUTPUT"
-            echo "Claude OAuth configuration detected; running independent review."
           else
             echo "configured=false" >> "$GITHUB_OUTPUT"
             echo "::error::Claude independent review is REQUIRED but CLAUDE_CODE_OAUTH_TOKEN is not configured."
