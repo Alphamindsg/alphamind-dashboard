@@ -4,23 +4,16 @@ name: Claude Independent PR Review
 # automation/claude-review-bridge@df1aca2ac9c845e21f4118ccdf31323db1ef48c5.
 # This feature branch integration does not modify PR #24.
 on:
-  push:
-    branches:
-      - copilot/notify-001-shared-telegram-gateway
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
 
 concurrency:
-  group: claude-review-${{ github.event.pull_request.number || github.sha }}
+  group: claude-review-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
   claude-review:
-    if: >-
-      (github.event_name == 'push' &&
-       github.ref_name == 'copilot/notify-001-shared-telegram-gateway') ||
-      (github.event_name == 'pull_request' &&
-       github.event.pull_request.head.repo.full_name == github.repository)
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 25
     permissions:
@@ -34,35 +27,17 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          EVENT_NAME: ${{ github.event_name }}
-          PUSH_SHA: ${{ github.sha }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_SHA: ${{ github.event.pull_request.head.sha }}
           PR_REPO: ${{ github.event.pull_request.head.repo.full_name }}
-          REPOSITORY: ${{ github.repository }}
+          EXPECTED_BRANCH: copilot/notify-001-shared-telegram-gateway
         run: |
           set -euo pipefail
-          expected_branch='copilot/notify-001-shared-telegram-gateway'
-          if [ "$EVENT_NAME" = pull_request ]; then
-            test "$PR_REPO" = "$REPOSITORY"
-            test "${{ github.event.pull_request.head.ref }}" = "$expected_branch"
-            candidate_number="$PR_NUMBER"
-            candidate_sha="$PR_SHA"
-          else
-            test "$GITHUB_REF_NAME" = "$expected_branch"
-            mapfile -t candidates < <(
-              gh api --paginate "repos/$REPOSITORY/pulls?state=open&per_page=100" \
-                --jq '.[] | [.number, .head.repo.full_name, .head.ref, .head.sha] | @tsv' |
-                awk -F '\t' -v repo="$REPOSITORY" -v branch="$expected_branch" \
-                  -v sha="$PUSH_SHA" '$2 == repo && $3 == branch && $4 == sha { print $1 "\t" $4 }'
-            )
-            test "${#candidates[@]}" -eq 1
-            IFS=$'\t' read -r candidate_number candidate_sha <<< "${candidates[0]}"
-            test "$candidate_sha" = "$PUSH_SHA"
-          fi
-          test -n "$candidate_number"
-          test -n "$candidate_sha"
-          printf 'number=%s\nsha=%s\n' "$candidate_number" "$candidate_sha" >> "$GITHUB_OUTPUT"
+          test "$PR_REPO" = "$GITHUB_REPOSITORY"
+          test "${{ github.event.pull_request.head.ref }}" = "$EXPECTED_BRANCH"
+          test -n "$PR_NUMBER"
+          test -n "$PR_SHA"
+          printf 'number=%s\nsha=%s\n' "$PR_NUMBER" "$PR_SHA" >> "$GITHUB_OUTPUT"
       - name: Check out exact PR head
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -72,20 +47,10 @@ jobs:
       - name: Verify exact candidate checkout
         env:
           EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
-          EVENT_NAME: ${{ github.event_name }}
-          PUSH_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
-          if [ "$EVENT_NAME" = push ]; then
-            test "$PUSH_SHA" = "$EXPECTED_SHA"
-          fi
-      - name: Record push bootstrap limitation
-        if: github.event_name == 'push'
-        run: |
-          echo "::warning::Claude Code Action does not support push events; exact candidate was resolved and checked out fail-closed. The pull_request synchronize event is the review execution path."
       - name: Require Claude OAuth configuration
-        if: github.event_name == 'pull_request'
         id: auth
         shell: bash
         env:
@@ -100,7 +65,7 @@ jobs:
             exit 1
           fi
       - name: Run independent Claude review
-        if: github.event_name == 'pull_request' && steps.auth.outputs.configured == 'true'
+        if: steps.auth.outputs.configured == 'true'
         uses: anthropics/claude-code-action@50b26a71effe456d50842a733597491c5636cb6f # v1.0.210
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}

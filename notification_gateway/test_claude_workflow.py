@@ -22,22 +22,11 @@ class ClaudeWorkflowContractTests(unittest.TestCase):
         cls.text = WORKFLOW.read_text(encoding="utf-8")
 
     def test_push_path_is_narrow_and_exact_head_bound(self):
-        self.assertIn("push:", self.text)
+        self.assertNotIn("\n  push:", self.text)
         self.assertIn("copilot/notify-001-shared-telegram-gateway", self.text)
-        self.assertIn('gh api --paginate "repos/$REPOSITORY/pulls?state=open&per_page=100"', self.text)
-        self.assertIn("head.repo.full_name", self.text)
-        self.assertIn("awk -F", self.text)
-        self.assertNotIn("--head", self.text)
-        self.assertIn('test "${#candidates[@]}" -eq 1', self.text)
-        self.assertIn('test "$candidate_sha" = "$PUSH_SHA"', self.text)
+        self.assertIn('test "$PR_REPO" = "$GITHUB_REPOSITORY"', self.text)
+        self.assertIn('test "${{ github.event.pull_request.head.ref }}" = "$EXPECTED_BRANCH"', self.text)
         self.assertIn('test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"', self.text)
-        self.assertIn("does not support push events", self.text)
-
-    def test_api_match_requires_repository_branch_and_sha(self):
-        self.assertIn('repo="$REPOSITORY"', self.text)
-        self.assertIn('branch="$expected_branch"', self.text)
-        self.assertIn('sha="$PUSH_SHA"', self.text)
-        self.assertIn('$2 == repo && $3 == branch && $4 == sha', self.text)
 
     def test_candidate_matching_accepts_only_one_exact_same_repo_head(self):
         sha = "a" * 40
@@ -54,9 +43,16 @@ class ClaudeWorkflowContractTests(unittest.TestCase):
             **candidate, "head": {**candidate["head"], "repo": {"full_name": "fork/repo"}}
         }], sha), [])
 
+    def test_push_or_skipped_action_cannot_be_certification(self):
+        self.assertNotIn("Record push bootstrap limitation", self.text)
+        self.assertNotIn("github.event_name == 'push'", self.text)
+        self.assertIn("pull_request:", self.text)
+        self.assertIn("Run independent Claude review", self.text)
+        self.assertIn("steps.auth.outputs.configured == 'true'", self.text)
+
     def test_pull_request_path_is_same_repo_only(self):
         self.assertIn("github.event.pull_request.head.repo.full_name == github.repository", self.text)
-        self.assertIn('test "$PR_REPO" = "$REPOSITORY"', self.text)
+        self.assertIn('test "$PR_REPO" = "$GITHUB_REPOSITORY"', self.text)
         self.assertIn("pull_request:", self.text)
         self.assertIn("persist-credentials: false", self.text)
 
@@ -71,7 +67,7 @@ class ClaudeWorkflowContractTests(unittest.TestCase):
             self.text,
         )
         self.assertIn(
-            "if: github.event_name == 'pull_request' && steps.auth.outputs.configured == 'true'",
+            "if: steps.auth.outputs.configured == 'true'",
             self.text,
         )
 
