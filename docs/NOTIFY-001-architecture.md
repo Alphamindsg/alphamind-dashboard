@@ -54,5 +54,10 @@ The independent Claude review workflow is integrated from PR #24's
 `automation/claude-review-bridge` at source head
 `df1aca2ac9c845e21f4118ccdf31323db1ef48c5`, with checkout pinned to
 `d23441a48e516b6c34aea4fa41551a30e30af803` and Claude Code Action pinned to
-`50b26a71effe456d50842a733597491c5636cb6f`. This review-only integration does
-not modify PR #24.
+the verified peeled commit
+`a874e9ecd7bb36efdad65429c6b35815f5a08f10` for tag object
+`50b26a71effe456d50842a733597491c5636cb6f`. It runs for same-repository PR
+events; after bot-authored updates, an owner may request one exact-head review
+with `@claude review <40-character-head-sha>` on the PR. The workflow
+re-fetches the PR and rejects stale SHA, fork, branch, or malformed requests
+before secrets are exposed. This review-only integration does not modify PR #24.

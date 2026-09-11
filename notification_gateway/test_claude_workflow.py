@@ -27,6 +27,12 @@ class ClaudeWorkflowContractTests(unittest.TestCase):
         self.assertIn('test "$PR_REPO" = "$GITHUB_REPOSITORY"', self.text)
         self.assertIn('test "${{ github.event.pull_request.head.ref }}" = "$EXPECTED_BRANCH"', self.text)
         self.assertIn('test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"', self.text)
+        self.assertIn("issue_comment:", self.text)
+        self.assertIn("github.event.comment.user.login == github.repository_owner", self.text)
+        self.assertIn('[[ "$COMMENT_BODY" =~ ^@claude', self.text)
+        self.assertIn('test "$candidate_sha" = "$requested_sha"', self.text)
+        self.assertIn("github.event.issue.pull_request", self.text)
+        self.assertIn("github.event.comment.user.login == github.repository_owner", self.text)
 
     def test_candidate_matching_accepts_only_one_exact_same_repo_head(self):
         sha = "a" * 40
@@ -55,6 +61,7 @@ class ClaudeWorkflowContractTests(unittest.TestCase):
         self.assertIn('test "$PR_REPO" = "$GITHUB_REPOSITORY"', self.text)
         self.assertIn("pull_request:", self.text)
         self.assertIn("persist-credentials: false", self.text)
+        self.assertIn('gh api "repos/$GITHUB_REPOSITORY/pulls/$ISSUE_NUMBER"', self.text)
 
     def test_secret_step_is_after_fail_closed_candidate_resolution(self):
         self.assertLess(
@@ -63,13 +70,14 @@ class ClaudeWorkflowContractTests(unittest.TestCase):
         )
         self.assertNotIn("pull_request_target", self.text)
         self.assertIn(
-            "uses: anthropics/claude-code-action@50b26a71effe456d50842a733597491c5636cb6f",
+            "uses: anthropics/claude-code-action@a874e9ecd7bb36efdad65429c6b35815f5a08f10",
             self.text,
         )
         self.assertIn(
             "if: steps.auth.outputs.configured == 'true'",
             self.text,
         )
+        self.assertIn('trigger_phrase: "@claude review"', self.text)
 
 
 if __name__ == "__main__":
