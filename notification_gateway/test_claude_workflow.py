@@ -61,6 +61,7 @@ class ClaudeWorkflowContractTests(unittest.TestCase):
         self.assertIn('test "$PR_REPO" = "$GITHUB_REPOSITORY"', self.text)
         self.assertIn("pull_request:", self.text)
         self.assertIn("persist-credentials: false", self.text)
+        self.assertIn("if: github.event_name == 'pull_request'", self.text)
         self.assertIn('gh api "repos/$GITHUB_REPOSITORY/pulls/$ISSUE_NUMBER"', self.text)
 
     def test_secret_step_is_after_fail_closed_candidate_resolution(self):
