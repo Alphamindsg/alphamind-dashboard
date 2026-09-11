@@ -31,6 +31,7 @@ class ClaudeWorkflowContractTests(unittest.TestCase):
         self.assertIn('test "${#candidates[@]}" -eq 1', self.text)
         self.assertIn('test "$candidate_sha" = "$PUSH_SHA"', self.text)
         self.assertIn('test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"', self.text)
+        self.assertIn("does not support push events", self.text)
 
     def test_api_match_requires_repository_branch_and_sha(self):
         self.assertIn('repo="$REPOSITORY"', self.text)
@@ -67,6 +68,10 @@ class ClaudeWorkflowContractTests(unittest.TestCase):
         self.assertNotIn("pull_request_target", self.text)
         self.assertIn(
             "uses: anthropics/claude-code-action@50b26a71effe456d50842a733597491c5636cb6f",
+            self.text,
+        )
+        self.assertIn(
+            "if: github.event_name == 'pull_request' && steps.auth.outputs.configured == 'true'",
             self.text,
         )
 

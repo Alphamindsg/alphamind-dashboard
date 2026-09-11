@@ -80,7 +80,12 @@ jobs:
           if [ "$EVENT_NAME" = push ]; then
             test "$PUSH_SHA" = "$EXPECTED_SHA"
           fi
+      - name: Record push bootstrap limitation
+        if: github.event_name == 'push'
+        run: |
+          echo "::warning::Claude Code Action does not support push events; exact candidate was resolved and checked out fail-closed. The pull_request synchronize event is the review execution path."
       - name: Require Claude OAuth configuration
+        if: github.event_name == 'pull_request'
         id: auth
         shell: bash
         env:
@@ -95,7 +100,7 @@ jobs:
             exit 1
           fi
       - name: Run independent Claude review
-        if: steps.auth.outputs.configured == 'true'
+        if: github.event_name == 'pull_request' && steps.auth.outputs.configured == 'true'
         uses: anthropics/claude-code-action@50b26a71effe456d50842a733597491c5636cb6f # v1.0.210
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
