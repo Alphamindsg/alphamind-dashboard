@@ -25,7 +25,7 @@ class ClaudeWorkflowContractTests(unittest.TestCase):
         self.assertNotIn("\n  push:", self.text)
         self.assertIn("copilot/notify-001-shared-telegram-gateway", self.text)
         self.assertIn('test "$PR_REPO" = "$GITHUB_REPOSITORY"', self.text)
-        self.assertIn('test "${{ github.event.pull_request.head.ref }}" = "$EXPECTED_BRANCH"', self.text)
+        self.assertIn('test "$PR_HEAD_REF" = "$EXPECTED_BRANCH"', self.text)
         self.assertIn('test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"', self.text)
         self.assertIn("pull_request_review:", self.text)
         self.assertIn('[[ "$REVIEW_BODY" =~ ^@claude', self.text)
