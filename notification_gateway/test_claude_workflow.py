@@ -3,7 +3,6 @@ from pathlib import Path
 
 
 WORKFLOW = Path(__file__).parents[1] / ".github" / "workflows" / "claude-review.yml"
-COMMENT_WORKFLOW = Path(__file__).parents[1] / ".github" / "workflows" / "claude-review-comment.yml"
 REPOSITORY = "Alphamindsg/alphamind-dashboard"
 BRANCH = "copilot/notify-001-shared-telegram-gateway"
 
@@ -21,7 +20,6 @@ class ClaudeWorkflowContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.text = WORKFLOW.read_text(encoding="utf-8")
-        cls.comment_text = COMMENT_WORKFLOW.read_text(encoding="utf-8")
 
     def test_push_path_is_narrow_and_exact_head_bound(self):
         self.assertNotIn("\n  push:", self.text)
@@ -29,6 +27,9 @@ class ClaudeWorkflowContractTests(unittest.TestCase):
         self.assertIn('test "$PR_REPO" = "$GITHUB_REPOSITORY"', self.text)
         self.assertIn('test "${{ github.event.pull_request.head.ref }}" = "$EXPECTED_BRANCH"', self.text)
         self.assertIn('test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"', self.text)
+        self.assertIn("pull_request_review:", self.text)
+        self.assertIn('[[ "$REVIEW_BODY" =~ ^@claude', self.text)
+        self.assertIn('test "$REVIEW_SHA" = "$requested_sha"', self.text)
 
     def test_candidate_matching_accepts_only_one_exact_same_repo_head(self):
         sha = "a" * 40
@@ -57,7 +58,7 @@ class ClaudeWorkflowContractTests(unittest.TestCase):
         self.assertIn('test "$PR_REPO" = "$GITHUB_REPOSITORY"', self.text)
         self.assertIn("pull_request:", self.text)
         self.assertIn("persist-credentials: false", self.text)
-        self.assertIn("if: github.event_name == 'pull_request'", self.text)
+        self.assertIn("github.event_name == 'pull_request' || github.event_name == 'pull_request_review'", self.text)
 
     def test_secret_step_is_after_fail_closed_candidate_resolution(self):
         self.assertLess(
@@ -74,21 +75,6 @@ class ClaudeWorkflowContractTests(unittest.TestCase):
             self.text,
         )
         self.assertIn('trigger_phrase: "@claude review"', self.text)
-
-    def test_comment_review_is_exact_and_never_checks_out_untrusted_code(self):
-        self.assertIn("issue_comment:", self.comment_text)
-        self.assertIn("github.event.issue.pull_request", self.comment_text)
-        self.assertIn("github.event.comment.user.login == github.repository_owner", self.comment_text)
-        self.assertIn('[[ "$COMMENT_BODY" =~ ^@claude', self.comment_text)
-        self.assertIn('gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER"', self.comment_text)
-        self.assertIn('test "$candidate_sha" = "$requested_sha"', self.comment_text)
-        self.assertNotIn("actions/checkout", self.comment_text)
-        self.assertNotIn("pull_request_target", self.comment_text)
-        self.assertIn("trigger_phrase: \"@claude review\"", self.comment_text)
-        self.assertLess(
-            self.comment_text.index("Resolve exact candidate PR"),
-            self.comment_text.index("Require Claude OAuth configuration"),
-        )
 
 
 if __name__ == "__main__":
