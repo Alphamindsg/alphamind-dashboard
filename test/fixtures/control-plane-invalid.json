@@ -1,0 +1,111 @@
+{
+  "cases": [
+    {
+      "name": "AI authority escalation",
+      "expected_error": "authority_exceeded:AI_ADVISER",
+      "record": {
+        "record_type": "BOT_RUNTIME",
+        "bot_id": "ai-broker",
+        "worker_class": "AI_ADVISER",
+        "authority_level": 4,
+        "health_state": "HEALTHY",
+        "software_version": "v1",
+        "last_succeeded_at": "2026-09-08T01:00:00Z",
+        "next_expected_at": "2026-09-08T02:00:00Z",
+        "owner_action_class": "NO_OWNER_ACTION"
+      }
+    },
+    {
+      "name": "unknown bot health fails closed",
+      "expected_error": "invalid:health_state",
+      "record": {
+        "record_type": "BOT_RUNTIME",
+        "bot_id": "silent-worker",
+        "worker_class": "BOT_WORKER",
+        "authority_level": 2,
+        "health_state": "UNKNOWN",
+        "software_version": "v1",
+        "last_succeeded_at": null,
+        "next_expected_at": null,
+        "owner_action_class": "NO_OWNER_ACTION"
+      }
+    },
+    {
+      "name": "duplicate dependencies",
+      "expected_error": "duplicate:dependencies",
+      "record": {
+        "record_type": "BOT_RUNTIME",
+        "bot_id": "duplicate-worker",
+        "worker_class": "BOT_WORKER",
+        "authority_level": 2,
+        "health_state": "DEGRADED",
+        "software_version": "v1",
+        "last_succeeded_at": "2026-09-08T01:00:00Z",
+        "next_expected_at": "2026-09-08T02:00:00Z",
+        "owner_action_class": "OWNER_REVIEW",
+        "dependencies": ["provider", "provider"]
+      }
+    },
+    {
+      "name": "unproven restore cannot pass",
+      "expected_error": "unproven:recovery_pass",
+      "record": {
+        "record_type": "RECOVERY_CERTIFICATION",
+        "certification_id": "recovery-unproven",
+        "repository": "Alphamindsg/alphamind-dashboard",
+        "exact_head_sha": "0000000000000000000000000000000000000000",
+        "backup_identity": null,
+        "performed_at": "2026-09-08T01:00:00Z",
+        "result": "PASS",
+        "checks": ["backup exists"],
+        "evidence": []
+      }
+    },
+    {
+      "name": "release cannot claim owner approval without evidence",
+      "expected_error": "missing:owner_authorization",
+      "record": {
+        "record_type": "RELEASE_EVIDENCE",
+        "repository": "Alphamindsg/alphamind-dashboard",
+        "branch": "feature/example",
+        "pr_number": 7,
+        "base_sha": "0000000000000000000000000000000000000000",
+        "exact_head_sha": "1111111111111111111111111111111111111111",
+        "generated_at": "2026-09-08T01:00:00Z",
+        "build": [],
+        "tests": [],
+        "ci": [],
+        "security": [],
+        "dependencies": [],
+        "migrations_or_schema_changes": [],
+        "recovery": [],
+        "outstanding_risks": [],
+        "production_authorization_status": "OWNER_APPROVED",
+        "owner_authorization": null,
+        "rollback_plan": "revert"
+      }
+    },
+    {
+      "name": "private PFO balance cannot enter public AlphaMind",
+      "expected_error": "private_finance_field:account_balance",
+      "record": {
+        "record_type": "RESEARCH_ENVELOPE",
+        "public_research_only": true,
+        "exact_head_sha": "1111111111111111111111111111111111111111",
+        "instrument_id": "example",
+        "account_balance": 50000
+      }
+    },
+    {
+      "name": "private CPF data cannot enter public AlphaMind",
+      "expected_error": "private_finance_field:cpf",
+      "record": {
+        "record_type": "RESEARCH_ENVELOPE",
+        "public_research_only": true,
+        "exact_head_sha": "1111111111111111111111111111111111111111",
+        "instrument_id": "example",
+        "cpf": {"oa": "redacted"}
+      }
+    }
+  ]
+}

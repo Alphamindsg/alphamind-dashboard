@@ -1,0 +1,62 @@
+name: Verify AlphaMind Control Plane
+
+on:
+  pull_request:
+    paths:
+      - "alphamind-*.js"
+      - "generate-release-evidence.js"
+      - "docs/contracts/**"
+      - "test/fixtures/**"
+      - ".github/workflows/alphamind-control-plane.yml"
+  push:
+    branches:
+      - "feature/alphamind-investment-core-contracts"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: alphamind-control-plane-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+
+      - name: Record exact head
+        run: |
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          git rev-parse HEAD
+
+      - name: Parse contracts and fixtures
+        run: |
+          node -e "const fs=require('node:fs'); ['docs/contracts/bot-control-plane-v1.schema.json','docs/contracts/alphamind-research-envelope-v1.schema.json','test/fixtures/control-plane-valid.json','test/fixtures/control-plane-invalid.json'].forEach((file)=>JSON.parse(fs.readFileSync(file,'utf8')))"
+
+      - name: Authority policy regression checks
+        run: node alphamind-authority-policy-regression-checks.js
+
+      - name: Control-plane invariant checks
+        run: node alphamind-control-plane-regression-checks.js
+
+      - name: Generate exact-head release evidence
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || github.sha }}
+          HEAD_SHA: ${{ github.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number || 7 }}
+        run: |
+          node generate-release-evidence.js
+          node -e "const e=require('./release-evidence.json'); if(e.exact_head_sha!==process.env.GITHUB_SHA) process.exit(1)"
+          {
+            echo "## Release evidence"
+            echo
+            echo "- Exact head: \`${GITHUB_SHA}\`"
+            echo "- Bundle validation: PASS"
+            echo "- Production authorization: NOT_REQUESTED"
+          } >> "${GITHUB_STEP_SUMMARY}"

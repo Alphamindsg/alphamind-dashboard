@@ -1,0 +1,143 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://alphamind.local/contracts/bot-control-plane-v1.schema.json",
+  "title": "Bot Control Plane v1",
+  "oneOf": [
+    { "$ref": "#/$defs/BotRuntimeRecord" },
+    { "$ref": "#/$defs/RecoveryCertification" },
+    { "$ref": "#/$defs/ReleaseEvidenceBundle" }
+  ],
+  "$defs": {
+    "Sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "StringList": { "type": "array", "items": { "type": "string" } },
+    "HealthState": {
+      "enum": ["HEALTHY", "DEGRADED", "BLOCKED", "FAILED", "PAUSED"]
+    },
+    "OwnerActionClass": {
+      "enum": ["NO_OWNER_ACTION", "OWNER_REVIEW", "OWNER_APPROVAL_REQUIRED", "SECURITY_HOLD", "DOMAIN_HOLD"]
+    },
+    "WorkerClass": {
+      "enum": ["DETERMINISTIC_ENGINE", "BOT_WORKER", "PROVIDER_ADAPTER", "MODEL_COMPONENT", "AI_ADVISER", "HUMAN_AUTHORITY"]
+    },
+    "ProductionAuthorizationStatus": {
+      "enum": ["NOT_REQUESTED", "OWNER_APPROVAL_REQUIRED", "OWNER_APPROVED"]
+    },
+    "BotRuntimeRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "record_type", "bot_id", "worker_class", "authority_level", "health_state",
+        "software_version", "last_succeeded_at", "next_expected_at", "owner_action_class"
+      ],
+      "properties": {
+        "record_type": { "const": "BOT_RUNTIME" },
+        "bot_id": { "type": "string", "minLength": 1 },
+        "capability": { "type": "string" },
+        "worker_class": { "$ref": "#/$defs/WorkerClass" },
+        "authority_level": { "type": "integer", "minimum": 0, "maximum": 4 },
+        "owner": { "type": "string" },
+        "trigger": { "type": "string" },
+        "dependencies": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "software_version": { "type": "string", "minLength": 1 },
+        "config_version": { "type": ["string", "null"] },
+        "data_contract_version": { "type": ["string", "null"] },
+        "model_provider_version": { "type": ["string", "null"] },
+        "last_started_at": { "type": ["string", "null"], "format": "date-time" },
+        "last_succeeded_at": { "type": ["string", "null"], "format": "date-time" },
+        "next_expected_at": { "type": ["string", "null"], "format": "date-time" },
+        "heartbeat_at": { "type": ["string", "null"], "format": "date-time" },
+        "health_state": { "$ref": "#/$defs/HealthState" },
+        "retry_count": { "type": "integer", "minimum": 0 },
+        "dead_letter_state": { "type": ["string", "null"] },
+        "evidence_pointer": { "type": ["string", "null"] },
+        "cost_amount": { "type": ["number", "null"], "minimum": 0 },
+        "cost_currency": { "type": ["string", "null"] },
+        "owner_action_class": { "$ref": "#/$defs/OwnerActionClass" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "worker_class": { "enum": ["AI_ADVISER", "MODEL_COMPONENT"] } }, "required": ["worker_class"] },
+          "then": { "properties": { "authority_level": { "maximum": 1 } } }
+        },
+        {
+          "if": { "properties": { "worker_class": { "enum": ["BOT_WORKER", "PROVIDER_ADAPTER", "DETERMINISTIC_ENGINE"] } }, "required": ["worker_class"] },
+          "then": { "properties": { "authority_level": { "maximum": 2 } } }
+        }
+      ]
+    },
+    "RecoveryCertification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["record_type", "certification_id", "repository", "exact_head_sha", "performed_at", "result", "checks"],
+      "properties": {
+        "record_type": { "const": "RECOVERY_CERTIFICATION" },
+        "certification_id": { "type": "string", "minLength": 1 },
+        "repository": { "type": "string", "minLength": 1 },
+        "exact_head_sha": { "$ref": "#/$defs/Sha" },
+        "config_identity": { "type": ["string", "null"] },
+        "backup_identity": { "type": ["string", "null"] },
+        "performed_at": { "type": "string", "format": "date-time" },
+        "result": { "enum": ["PASS", "FAIL", "PARTIAL"] },
+        "checks": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+        "exceptions": { "$ref": "#/$defs/StringList" },
+        "evidence": { "$ref": "#/$defs/StringList" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "result": { "const": "PASS" } }, "required": ["result"] },
+          "then": {
+            "required": ["backup_identity", "evidence"],
+            "properties": {
+              "backup_identity": { "type": "string", "minLength": 1 },
+              "evidence": { "type": "array", "minItems": 1, "items": { "type": "string" } }
+            }
+          }
+        }
+      ]
+    },
+    "ReleaseEvidenceBundle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "record_type", "repository", "branch", "pr_number", "base_sha", "exact_head_sha",
+        "generated_at", "build", "tests", "ci", "security", "dependencies",
+        "migrations_or_schema_changes", "recovery", "outstanding_risks",
+        "production_authorization_status", "rollback_plan"
+      ],
+      "properties": {
+        "record_type": { "const": "RELEASE_EVIDENCE" },
+        "repository": { "type": "string", "minLength": 1 },
+        "branch": { "type": "string", "minLength": 1 },
+        "pr_number": { "type": "integer", "minimum": 1 },
+        "base_sha": { "$ref": "#/$defs/Sha" },
+        "exact_head_sha": { "$ref": "#/$defs/Sha" },
+        "generated_at": { "type": "string", "format": "date-time" },
+        "build": { "$ref": "#/$defs/StringList" },
+        "tests": { "$ref": "#/$defs/StringList" },
+        "ci": { "$ref": "#/$defs/StringList" },
+        "security": { "$ref": "#/$defs/StringList" },
+        "dependencies": { "$ref": "#/$defs/StringList" },
+        "migrations_or_schema_changes": { "$ref": "#/$defs/StringList" },
+        "recovery": { "$ref": "#/$defs/StringList" },
+        "outstanding_risks": { "$ref": "#/$defs/StringList" },
+        "independent_review": { "type": ["string", "null"] },
+        "owner_authorization": { "type": ["string", "null"] },
+        "production_authorization_status": { "$ref": "#/$defs/ProductionAuthorizationStatus" },
+        "rollout_plan": { "type": ["string", "null"] },
+        "rollback_plan": { "type": "string", "minLength": 1 }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "production_authorization_status": { "const": "OWNER_APPROVED" } },
+            "required": ["production_authorization_status"]
+          },
+          "then": {
+            "required": ["owner_authorization"],
+            "properties": { "owner_authorization": { "type": "string", "minLength": 1 } }
+          }
+        }
+      ]
+    }
+  }
+}
