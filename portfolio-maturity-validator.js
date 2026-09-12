@@ -24,18 +24,29 @@ var RELEASE_STATES = Object.freeze([
 ]);
 
 var OUTCOME_STATES = Object.freeze(["MEASURED", "PARTIAL", "UNKNOWN", "BLOCKED"]);
+var DIMENSION_KEYS = Object.freeze(Object.keys(WEIGHTS));
 
 function isScore(value) {
   return Number.isFinite(value) && value >= 0 && value <= 100;
 }
 
-function calculateWeightedScore(dimensions) {
-  if (!dimensions || typeof dimensions !== "object") return null;
-  var keys = Object.keys(WEIGHTS);
-  for (var i = 0; i < keys.length; i += 1) {
-    if (!isScore(dimensions[keys[i]])) return null;
+function hasExactKeys(object, expectedKeys) {
+  if (!object || typeof object !== "object" || Array.isArray(object)) return false;
+  var actual = Object.keys(object).sort();
+  var expected = expectedKeys.slice().sort();
+  if (actual.length !== expected.length) return false;
+  for (var i = 0; i < expected.length; i += 1) {
+    if (actual[i] !== expected[i]) return false;
   }
-  var total = keys.reduce(function (sum, key) {
+  return true;
+}
+
+function calculateWeightedScore(dimensions) {
+  if (!hasExactKeys(dimensions, DIMENSION_KEYS)) return null;
+  for (var i = 0; i < DIMENSION_KEYS.length; i += 1) {
+    if (!isScore(dimensions[DIMENSION_KEYS[i]])) return null;
+  }
+  var total = DIMENSION_KEYS.reduce(function (sum, key) {
     return sum + dimensions[key] * WEIGHTS[key];
   }, 0);
   return Math.round(total * 100) / 100;
@@ -68,8 +79,17 @@ function validate(record) {
     }
   }
 
-  if (record.release_state === "READY" && Array.isArray(record.known_blockers) && record.known_blockers.length > 0) {
-    errors.push("ready_with_known_blockers");
+  var blockersValid = record.known_blockers === undefined ||
+    (Array.isArray(record.known_blockers) && record.known_blockers.every(function (item) {
+      return typeof item === "string";
+    }));
+  if (!blockersValid) errors.push("known_blockers_invalid");
+  if (record.release_state === "READY") {
+    if (!blockersValid) {
+      errors.push("ready_with_unknown_blockers");
+    } else if (Array.isArray(record.known_blockers) && record.known_blockers.length > 0) {
+      errors.push("ready_with_known_blockers");
+    }
   }
   return errors;
 }
@@ -78,6 +98,7 @@ module.exports = Object.freeze({
   WEIGHTS: WEIGHTS,
   RELEASE_STATES: RELEASE_STATES,
   OUTCOME_STATES: OUTCOME_STATES,
+  DIMENSION_KEYS: DIMENSION_KEYS,
   calculateWeightedScore: calculateWeightedScore,
   validate: validate
 });
