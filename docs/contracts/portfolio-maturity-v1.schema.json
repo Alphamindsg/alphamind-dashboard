@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://alphamind.local/contracts/portfolio-maturity-v1.schema.json",
+  "title": "AlphaMind Portfolio Maturity Contract v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "repository",
+    "exact_head_sha",
+    "measured_at",
+    "dimensions",
+    "weighted_score",
+    "outcomes",
+    "release_state"
+  ],
+  "properties": {
+    "schema_version": { "const": "portfolio-maturity-v1" },
+    "repository": { "type": "string", "minLength": 3 },
+    "exact_head_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "measured_at": { "type": "string", "format": "date-time" },
+    "dimensions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scope",
+        "correctness",
+        "reliability_recovery",
+        "security",
+        "ux",
+        "automation",
+        "real_world_validation",
+        "cost_efficiency"
+      ],
+      "properties": {
+        "scope": { "$ref": "#/$defs/score" },
+        "correctness": { "$ref": "#/$defs/score" },
+        "reliability_recovery": { "$ref": "#/$defs/score" },
+        "security": { "$ref": "#/$defs/score" },
+        "ux": { "$ref": "#/$defs/score" },
+        "automation": { "$ref": "#/$defs/score" },
+        "real_world_validation": { "$ref": "#/$defs/score" },
+        "cost_efficiency": { "$ref": "#/$defs/score" }
+      }
+    },
+    "weighted_score": { "$ref": "#/$defs/score" },
+    "outcomes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["primary_kpi", "baseline", "current", "measurement_status"],
+      "properties": {
+        "primary_kpi": { "type": "string", "minLength": 1 },
+        "baseline": { "type": ["number", "string", "null"] },
+        "current": { "type": ["number", "string", "null"] },
+        "measurement_status": {
+          "enum": ["MEASURED", "PARTIAL", "UNKNOWN", "BLOCKED"]
+        },
+        "counterfactual": { "type": ["number", "string", "null"] },
+        "notes": { "type": "string" }
+      }
+    },
+    "release_state": {
+      "enum": [
+        "UNVERIFIED",
+        "TESTING",
+        "FAILED",
+        "REMEDIATING",
+        "VERIFIED",
+        "INDEPENDENT_REVIEW",
+        "RELEASE_GATED",
+        "OWNER_APPROVAL_REQUIRED",
+        "READY"
+      ]
+    },
+    "known_blockers": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  },
+  "$defs": {
+    "score": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100
+    }
+  }
+}
