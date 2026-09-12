@@ -27,9 +27,6 @@ class ClaudeWorkflowContractTests(unittest.TestCase):
         self.assertIn('test "$PR_REPO" = "$GITHUB_REPOSITORY"', self.text)
         self.assertIn('test "$PR_HEAD_REF" = "$EXPECTED_BRANCH"', self.text)
         self.assertIn('test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"', self.text)
-        self.assertIn("pull_request_review:", self.text)
-        self.assertIn('[[ "$REVIEW_BODY" =~ ^@claude', self.text)
-        self.assertIn('test "$REVIEW_SHA" = "$requested_sha"', self.text)
 
     def test_candidate_matching_accepts_only_one_exact_same_repo_head(self):
         sha = "a" * 40
@@ -58,7 +55,6 @@ class ClaudeWorkflowContractTests(unittest.TestCase):
         self.assertIn('test "$PR_REPO" = "$GITHUB_REPOSITORY"', self.text)
         self.assertIn("pull_request:", self.text)
         self.assertIn("persist-credentials: false", self.text)
-        self.assertIn("github.event_name == 'pull_request' || github.event_name == 'pull_request_review'", self.text)
 
     def test_secret_step_is_after_fail_closed_candidate_resolution(self):
         self.assertLess(

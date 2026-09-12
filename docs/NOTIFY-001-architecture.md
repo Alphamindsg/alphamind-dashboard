@@ -57,7 +57,12 @@ The independent Claude review workflow is integrated from PR #24's
 the verified peeled commit
 `a874e9ecd7bb36efdad65429c6b35815f5a08f10` for tag object
 `50b26a71effe456d50842a733597491c5636cb6f`. It runs for same-repository PR
-events; after bot-authored updates, an owner may submit a PR review whose body is
-`@claude review <40-character-head-sha>`. The workflow
+events. The candidate workflow is evaluated
+from the base revision by GitHub, so a workflow trigger added only on this draft
+branch cannot create a new PR run for a bot-authored update. If GitHub suppresses
+the bot-authored synchronize event, the minimum safe owner action is to mark the
+same-repository PR ready for review (or close and reopen it); this emits the
+canonical base `pull_request` event and binds the run to its current immutable
+head. A push-only gateway result is never review evidence. The workflow
 re-fetches the PR and rejects stale SHA, fork, branch, or malformed requests
 before secrets are exposed. This review-only integration does not modify PR #24.
