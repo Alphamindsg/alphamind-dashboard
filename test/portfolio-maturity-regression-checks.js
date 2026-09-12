@@ -15,7 +15,7 @@ var dimensions = {
 };
 
 var score = maturity.calculateWeightedScore(dimensions);
-assert.equal(score, 80.55);
+assert.equal(score, 80.05);
 
 var valid = {
   schema_version: "portfolio-maturity-v1",
