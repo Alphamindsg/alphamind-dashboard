@@ -46,6 +46,16 @@ var invalidDimension = JSON.parse(JSON.stringify(valid));
 invalidDimension.dimensions.correctness = 101;
 assert.ok(maturity.validate(invalidDimension).indexOf("dimensions_invalid") !== -1);
 
+var extraDimension = JSON.parse(JSON.stringify(valid));
+extraDimension.dimensions.unapproved_dimension = 100;
+assert.equal(maturity.calculateWeightedScore(extraDimension.dimensions), null);
+assert.ok(maturity.validate(extraDimension).indexOf("dimensions_invalid") !== -1);
+
+var missingDimension = JSON.parse(JSON.stringify(valid));
+delete missingDimension.dimensions.security;
+assert.equal(maturity.calculateWeightedScore(missingDimension.dimensions), null);
+assert.ok(maturity.validate(missingDimension).indexOf("dimensions_invalid") !== -1);
+
 var prematureReady = JSON.parse(JSON.stringify(valid));
 prematureReady.release_state = "READY";
 prematureReady.outcomes.measurement_status = "PARTIAL";
@@ -55,6 +65,19 @@ var blockedReady = JSON.parse(JSON.stringify(valid));
 blockedReady.release_state = "READY";
 blockedReady.known_blockers = ["recovery certification missing"];
 assert.ok(maturity.validate(blockedReady).indexOf("ready_with_known_blockers") !== -1);
+
+["recovery certification missing", { blocker: "recovery" }, 1].forEach(function (malformedBlockers) {
+  var malformedReady = JSON.parse(JSON.stringify(valid));
+  malformedReady.release_state = "READY";
+  malformedReady.known_blockers = malformedBlockers;
+  var errors = maturity.validate(malformedReady);
+  assert.ok(errors.indexOf("known_blockers_invalid") !== -1);
+  assert.ok(errors.indexOf("ready_with_unknown_blockers") !== -1);
+});
+
+var malformedBlockerItem = JSON.parse(JSON.stringify(valid));
+malformedBlockerItem.known_blockers = ["valid", { invalid: true }];
+assert.ok(maturity.validate(malformedBlockerItem).indexOf("known_blockers_invalid") !== -1);
 
 assert.equal(maturity.calculateWeightedScore(null), null);
 assert.deepEqual(maturity.validate(null), ["record_invalid"]);
