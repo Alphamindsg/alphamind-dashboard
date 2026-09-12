@@ -36,6 +36,9 @@ var valid = {
 };
 assert.deepEqual(maturity.validate(valid), []);
 
+var extraTopLevel = Object.assign({}, valid, { unexpected: true });
+assert.ok(maturity.validate(extraTopLevel).indexOf("record_fields_invalid") !== -1);
+
 var mismatch = Object.assign({}, valid, { weighted_score: 99 });
 assert.ok(maturity.validate(mismatch).indexOf("weighted_score_mismatch") !== -1);
 
@@ -60,6 +63,53 @@ var prematureReady = JSON.parse(JSON.stringify(valid));
 prematureReady.release_state = "READY";
 prematureReady.outcomes.measurement_status = "PARTIAL";
 assert.ok(maturity.validate(prematureReady).indexOf("ready_requires_measured_outcome") !== -1);
+
+var missingBaseline = JSON.parse(JSON.stringify(valid));
+delete missingBaseline.outcomes.baseline;
+var missingBaselineErrors = maturity.validate(missingBaseline);
+assert.ok(missingBaselineErrors.indexOf("outcomes_required_fields_missing") !== -1);
+assert.ok(missingBaselineErrors.indexOf("baseline_invalid") !== -1);
+
+var missingCurrent = JSON.parse(JSON.stringify(valid));
+delete missingCurrent.outcomes.current;
+var missingCurrentErrors = maturity.validate(missingCurrent);
+assert.ok(missingCurrentErrors.indexOf("outcomes_required_fields_missing") !== -1);
+assert.ok(missingCurrentErrors.indexOf("current_invalid") !== -1);
+
+var extraOutcomeField = JSON.parse(JSON.stringify(valid));
+extraOutcomeField.outcomes.unexpected = "drift";
+assert.ok(maturity.validate(extraOutcomeField).indexOf("outcomes_fields_invalid") !== -1);
+
+[
+  {
+    field: "baseline",
+    value: { before: 10 },
+    error: "baseline_invalid"
+  },
+  {
+    field: "current",
+    value: ["twelve"],
+    error: "current_invalid"
+  },
+  {
+    field: "counterfactual",
+    value: true,
+    error: "counterfactual_invalid"
+  },
+  {
+    field: "notes",
+    value: null,
+    error: "notes_invalid"
+  }
+].forEach(function (caseInfo) {
+  var malformedOutcomeField = JSON.parse(JSON.stringify(valid));
+  malformedOutcomeField.outcomes[caseInfo.field] = caseInfo.value;
+  assert.ok(maturity.validate(malformedOutcomeField).indexOf(caseInfo.error) !== -1);
+});
+
+var malformedOutcomesShape = JSON.parse(JSON.stringify(valid));
+malformedOutcomesShape.outcomes = [];
+assert.ok(maturity.validate(malformedOutcomesShape).indexOf("outcomes_invalid") !== -1);
 
 var blockedReady = JSON.parse(JSON.stringify(valid));
 blockedReady.release_state = "READY";
