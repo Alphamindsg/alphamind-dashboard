@@ -6,6 +6,8 @@ on:
       - "docs/contracts/portfolio-maturity-v1.schema.json"
       - "portfolio-maturity-validator.js"
       - "test/portfolio-maturity-regression-checks.js"
+      - "test/claude-review-workflow-regression-checks.js"
+      - ".github/workflows/claude-review.yml"
       - ".github/workflows/portfolio-maturity.yml"
   push:
     branches:
@@ -38,3 +40,6 @@ jobs:
 
       - name: Run deterministic regression checks
         run: node test/portfolio-maturity-regression-checks.js
+
+      - name: Run Claude workflow regression checks
+        run: node test/claude-review-workflow-regression-checks.js
