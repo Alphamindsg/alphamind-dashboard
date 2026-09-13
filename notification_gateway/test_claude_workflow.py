@@ -57,6 +57,12 @@ class ClaudeWorkflowContractTests(unittest.TestCase):
         self.assertIn('allowed-tools "Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr checks:*)"', self.text)
         self.assertIn("Do not modify repository code, merge, deploy", self.text)
 
+    def test_only_trusted_copilot_bot_is_allowlisted(self):
+        self.assertIn("allowed_bots: Copilot", self.text)
+        self.assertNotIn("allowed_bots: '*'", self.text)
+        self.assertNotIn("allowed_bots: *", self.text)
+        self.assertNotIn("allowed_bots: Copilot, *", self.text)
+
 
 if __name__ == "__main__":
     unittest.main()
