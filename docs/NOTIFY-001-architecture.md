@@ -66,3 +66,7 @@ canonical base `pull_request` event and binds the run to its current immutable
 head. A push-only gateway result is never review evidence. The workflow
 re-fetches the PR and rejects stale SHA, fork, branch, or malformed requests
 before secrets are exposed. This review-only integration does not modify PR #24.
+The action explicitly allowlists only the trusted `Copilot` bot; wildcard bot
+allowlisting is forbidden. This prevents the action's default GitHub-App
+permission check from rejecting the trusted builder while preserving a
+fail-closed policy for unknown bots.
