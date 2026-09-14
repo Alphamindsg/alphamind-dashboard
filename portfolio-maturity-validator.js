@@ -46,6 +46,7 @@ var ALLOWED_OUTCOME_KEYS = Object.freeze(REQUIRED_OUTCOME_KEYS.concat([
   "counterfactual",
   "notes"
 ]));
+var RFC3339_DATE_TIME = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(\.\d+)?(?:Z|([+-])(\d{2}):(\d{2}))$/;
 
 function isScore(value) {
   return Number.isFinite(value) && value >= 0 && value <= 100;
@@ -80,6 +81,48 @@ function isOutcomeValue(value) {
   return value === null || typeof value === "number" || typeof value === "string";
 }
 
+function daysInMonth(year, month) {
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+function isRfc3339DateTime(value) {
+  if (typeof value !== "string") return false;
+  var match = RFC3339_DATE_TIME.exec(value);
+  if (!match) return false;
+
+  var year = Number(match[1]);
+  var month = Number(match[2]);
+  var day = Number(match[3]);
+  var hour = Number(match[4]);
+  var minute = Number(match[5]);
+  var second = Number(match[6]);
+  var fractional = match[7] ? Math.floor(Number(match[7]) * 1000) : 0;
+  var offsetSign = match[8] === "-" ? -1 : 1;
+  var offsetHours = match[9] ? Number(match[9]) : 0;
+  var offsetMinutes = match[10] ? Number(match[10]) : 0;
+
+  if (month < 1 || month > 12) return false;
+  if (day < 1 || day > daysInMonth(year, month)) return false;
+  if (hour > 23 || minute > 59 || second > 59) return false;
+  if (offsetHours > 23 || offsetMinutes > 59) return false;
+
+  var offsetTotalMinutes = offsetSign * (offsetHours * 60 + offsetMinutes);
+  var timestamp = Date.UTC(year, month - 1, day, hour, minute - offsetTotalMinutes, second, fractional);
+  if (!Number.isFinite(timestamp)) return false;
+
+  var instant = new Date(timestamp);
+  if (match[8]) {
+    instant = new Date(timestamp + offsetTotalMinutes * 60000);
+  }
+
+  return instant.getUTCFullYear() === year &&
+    instant.getUTCMonth() === month - 1 &&
+    instant.getUTCDate() === day &&
+    instant.getUTCHours() === hour &&
+    instant.getUTCMinutes() === minute &&
+    instant.getUTCSeconds() === second;
+}
+
 function calculateWeightedScore(dimensions) {
   if (!hasExactKeys(dimensions, DIMENSION_KEYS)) return null;
   for (var i = 0; i < DIMENSION_KEYS.length; i += 1) {
@@ -98,7 +141,7 @@ function validate(record) {
   if (record.schema_version !== "portfolio-maturity-v1") errors.push("schema_version_invalid");
   if (typeof record.repository !== "string" || record.repository.length < 3) errors.push("repository_invalid");
   if (typeof record.exact_head_sha !== "string" || !/^[0-9a-f]{40}$/.test(record.exact_head_sha)) errors.push("exact_head_sha_invalid");
-  if (typeof record.measured_at !== "string" || !Number.isFinite(Date.parse(record.measured_at))) errors.push("measured_at_invalid");
+  if (!isRfc3339DateTime(record.measured_at)) errors.push("measured_at_invalid");
 
   var expected = calculateWeightedScore(record.dimensions);
   if (expected === null) errors.push("dimensions_invalid");

@@ -36,14 +36,38 @@ var valid = {
 };
 assert.deepEqual(maturity.validate(valid), []);
 
+var validOffsetTimestamp = JSON.parse(JSON.stringify(valid));
+validOffsetTimestamp.measured_at = "2026-09-12T09:30:00+05:30";
+assert.deepEqual(maturity.validate(validOffsetTimestamp), []);
+
 var extraTopLevel = Object.assign({}, valid, { unexpected: true });
 assert.ok(maturity.validate(extraTopLevel).indexOf("record_fields_invalid") !== -1);
+
+[
+  "2026-09-12",
+  "2026-09-12T04:00:00",
+  "2026-02-30T04:00:00Z",
+  "2026-09-12T24:00:00Z"
+].forEach(function (measuredAt) {
+  var invalidMeasuredAt = JSON.parse(JSON.stringify(valid));
+  invalidMeasuredAt.measured_at = measuredAt;
+  assert.ok(maturity.validate(invalidMeasuredAt).indexOf("measured_at_invalid") !== -1);
+});
+
+var invalidSchemaVersion = Object.assign({}, valid, { schema_version: "portfolio-maturity-v2" });
+assert.ok(maturity.validate(invalidSchemaVersion).indexOf("schema_version_invalid") !== -1);
+
+var invalidRepository = Object.assign({}, valid, { repository: "ab" });
+assert.ok(maturity.validate(invalidRepository).indexOf("repository_invalid") !== -1);
 
 var mismatch = Object.assign({}, valid, { weighted_score: 99 });
 assert.ok(maturity.validate(mismatch).indexOf("weighted_score_mismatch") !== -1);
 
 var badHead = Object.assign({}, valid, { exact_head_sha: "main" });
 assert.ok(maturity.validate(badHead).indexOf("exact_head_sha_invalid") !== -1);
+
+var invalidReleaseState = Object.assign({}, valid, { release_state: "GO" });
+assert.ok(maturity.validate(invalidReleaseState).indexOf("release_state_invalid") !== -1);
 
 var invalidDimension = JSON.parse(JSON.stringify(valid));
 invalidDimension.dimensions.correctness = 101;
