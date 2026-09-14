@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Mapping
 
 from .gateway import Gateway, TransportOutcome
-from .report import DeliveryBlocked, DeliveryReceipt, DeliveryRetry, DeliveryUnknown
+from .report import DeliveryBlocked, DeliveryReceipt, DeliveryRejected, DeliveryRetry, DeliveryUnknown
 
 
 class LocalProducer:
@@ -76,5 +76,5 @@ class DirectTelegramReportAdapter:
         if outcome.kind == "retry":
             return DeliveryRetry(outcome.retry_after)
         if outcome.kind in {"unknown", "rejected"}:
-            return DeliveryUnknown(outcome.kind)
+            return DeliveryRejected(outcome.kind) if outcome.kind == "rejected" else DeliveryUnknown(outcome.kind)
         return DeliveryUnknown()

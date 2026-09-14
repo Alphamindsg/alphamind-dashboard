@@ -3,8 +3,8 @@ import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 
-from notification_gateway.adapters import LocalHandoffAdapter, OfflineReportAdapter
-from notification_gateway.gateway import GatewayError, SQLiteState
+from notification_gateway.adapters import DirectTelegramReportAdapter, LocalHandoffAdapter, OfflineReportAdapter
+from notification_gateway.gateway import GatewayError, SQLiteState, TransportOutcome
 from notification_gateway.report import (
     DeliveryRetry,
     REQUIRED_SECTIONS,
@@ -91,6 +91,52 @@ class ReportTests(unittest.TestCase):
             ).fetchone()[0],
             "VERIFIED",
         )
+
+    def test_definite_provider_rejection_is_blocked_not_unknown(self):
+        gateway = self.gateway()
+        gateway.adapters["telegram"] = DirectTelegramReportAdapter(
+            type("RejectedTransport", (), {
+                "send": lambda _self, _body: TransportOutcome("rejected")
+            })()
+        )
+        gateway.ingest(report())
+        self.assertEqual(gateway.deliver_one("report-1", 1), "verified")
+        self.store.db.execute(
+            "UPDATE report_delivery_cursor SET last_destination='chatgpt' WHERE id=1"
+        )
+        self.assertEqual(gateway.deliver_one("report-1", 1), "blocked")
+        row = self.store.db.execute(
+            "SELECT status,last_error FROM report_deliveries "
+            "WHERE report_id='report-1' AND destination='telegram'"
+        ).fetchone()
+        self.assertEqual(row["status"], "BLOCKED")
+        self.assertEqual(row["last_error"], "rejected")
+        self.assertEqual(
+            self.store.db.execute(
+                "SELECT transition FROM report_audit "
+                "WHERE report_id='report-1' AND destination='telegram' ORDER BY id DESC LIMIT 1"
+            ).fetchone()["transition"],
+            "REJECTED",
+        )
+
+    def test_telegram_retry_after_cooldown_coordinates_with_event_store(self):
+        gateway = self.gateway()
+        gateway.adapters["telegram"].send = lambda *_args: DeliveryRetry(7200)
+        gateway.ingest(report())
+        self.assertEqual(gateway.deliver_one("report-1", 1), "verified")
+        self.store.db.execute(
+            "UPDATE report_delivery_cursor SET last_destination='chatgpt' WHERE id=1"
+        )
+        self.assertEqual(gateway.deliver_one("report-1", 1), "retry")
+        cooldown = self.state.db.execute(
+            "SELECT cooldown_until FROM provider_state WHERE name='telegram'"
+        ).fetchone()["cooldown_until"]
+        self.assertGreater(cooldown, self.state.clock())
+        self.assertEqual(self.state.claim(), None)
+        gateway.ingest(report(report_id="other-report"))
+        next_report = self.store.claim("other-report", 1)
+        self.assertIsNotNone(next_report)
+        self.assertEqual(next_report["destination"], "chatgpt")
 
     def test_chatgpt_failure_preserves_telegram_and_retry_is_independent(self):
         gateway = self.gateway(chat=False)

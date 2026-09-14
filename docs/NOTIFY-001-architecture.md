@@ -47,8 +47,9 @@ Report delivery uses durable per-part leases and attempt IDs. The attempt intent
 is committed before an adapter is called; expired leases become `UNKNOWN` and
 are never automatically resent. Telegram reports use the typed Direct Telegram
 transport, while ChatGPT remains pending/blocked until a trusted platform
-adapter or operator attestation supplies a receipt bound to the report digest
-and attempt.
+adapter supplies a receipt bound to the report digest and attempt. Report-level
+operator attestation is not implemented; unresolved delivery remains blocked
+until a trusted adapter provides that receipt.
 
 The independent Claude review workflow is integrated from PR #24's
 `automation/claude-review-bridge` at source head

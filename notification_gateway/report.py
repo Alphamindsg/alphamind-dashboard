@@ -145,6 +145,11 @@ class DeliveryBlocked:
     reason: str = "destination unavailable"
 
 
+@dataclass(frozen=True)
+class DeliveryRejected:
+    reason: str = "provider rejected delivery"
+
+
 class ReportStore:
     """Stores canonical reports and independently keyed destination parts."""
 
@@ -253,14 +258,19 @@ class ReportStore:
             "SELECT last_destination FROM report_delivery_cursor WHERE id=1"
         ).fetchone()
         preferred = "telegram" if last and last["last_destination"] == "chatgpt" else "chatgpt"
+        cooldown = self.db.execute(
+            "SELECT cooldown_until FROM provider_state WHERE name='telegram'"
+        ).fetchone()
+        telegram_ready = not cooldown or cooldown["cooldown_until"] <= now
         row = self.db.execute(
             """SELECT * FROM report_deliveries WHERE report_id=? AND revision=?
                AND status IN ('PENDING','RETRY') AND next_attempt<=?
+               AND (destination != 'telegram' OR ?)
                ORDER BY (SELECT CASE priority WHEN 'critical' THEN 0 WHEN 'urgent' THEN 1 ELSE 2 END
                          FROM reports WHERE reports.report_id=report_deliveries.report_id
                          AND reports.revision=report_deliveries.revision),
                         CASE WHEN destination=? THEN 0 ELSE 1 END, part LIMIT 1""",
-            (report_id, revision, now, preferred),
+            (report_id, revision, now, telegram_ready, preferred),
         ).fetchone()
         if not row:
             self.db.execute("COMMIT")
@@ -395,6 +405,13 @@ class ReportStore:
         attempts = row["attempts"]
         status = "DEAD" if attempts >= 5 else "RETRY"
         delay = retry_after if type(retry_after) is int and retry_after >= 0 else min(7200, 2 ** attempts)
+        if delivery["destination"] == "telegram" and retry_after is not None:
+            self.db.execute(
+                """INSERT INTO provider_state(name, cooldown_until) VALUES('telegram', ?)
+                   ON CONFLICT(name) DO UPDATE SET cooldown_until=
+                   MAX(cooldown_until, excluded.cooldown_until)""",
+                (self.state.clock() + retry_after,),
+            )
         self.db.execute(
             """UPDATE report_deliveries SET status=?, attempts=?, last_error=?,
                next_attempt=?, lease_until=0, lease_token=NULL
@@ -406,6 +423,29 @@ class ReportStore:
         self._audit(report, delivery["destination"], delivery["part"], status, reason)
         self.db.execute("COMMIT")
         return status.lower()
+
+    def rejected(self, report: Report, delivery: Mapping[str, Any], reason: str,
+                 attempt_id: str, lease_token: str) -> str:
+        self.db.execute("BEGIN IMMEDIATE")
+        row = self.db.execute(
+            """SELECT status FROM report_deliveries WHERE report_id=? AND revision=?
+               AND destination=? AND part=? AND status='LEASED' AND lease_token=?
+               AND attempt_id=? AND lease_until>?""",
+            (report.report_id, report.revision, delivery["destination"], delivery["part"],
+             lease_token, attempt_id, self.state.clock()),
+        ).fetchone()
+        if not row:
+            self.db.execute("ROLLBACK")
+            raise GatewayError("stale delivery lease")
+        self.db.execute(
+            """UPDATE report_deliveries SET status='BLOCKED', last_error=?,
+               lease_token=NULL WHERE report_id=? AND revision=? AND destination=? AND part=?""",
+            (_safe_text(reason, 256), report.report_id, report.revision,
+             delivery["destination"], delivery["part"]),
+        )
+        self._audit(report, delivery["destination"], delivery["part"], "REJECTED", reason)
+        self.db.execute("COMMIT")
+        return "blocked"
 
 
 class ReportGateway:
@@ -441,6 +481,10 @@ class ReportGateway:
                 return self.store.record(report, row, None, row["attempt_id"], row["lease_token"])
             if isinstance(result, DeliveryBlocked):
                 return self.store.blocked(
+                    report, row, result.reason, row["attempt_id"], row["lease_token"]
+                )
+            if isinstance(result, DeliveryRejected):
+                return self.store.rejected(
                     report, row, result.reason, row["attempt_id"], row["lease_token"]
                 )
             receipt = result
