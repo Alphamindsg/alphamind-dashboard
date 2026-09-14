@@ -1,0 +1,45 @@
+name: Verify Portfolio Maturity Contract
+
+on:
+  pull_request:
+    paths:
+      - "docs/contracts/portfolio-maturity-v1.schema.json"
+      - "portfolio-maturity-validator.js"
+      - "test/portfolio-maturity-regression-checks.js"
+      - "test/claude-review-workflow-regression-checks.js"
+      - ".github/workflows/claude-review.yml"
+      - ".github/workflows/portfolio-maturity.yml"
+  push:
+    branches:
+      - "feature/portfolio-outcome-maturity-contracts"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Verify exact PR or push head
+        run: |
+          test -n "${EXPECTED_HEAD_SHA}"
+          test "$(git rev-parse HEAD)" = "${EXPECTED_HEAD_SHA}"
+          git rev-parse HEAD
+
+      - name: Parse schema
+        run: node -e "JSON.parse(require('node:fs').readFileSync('docs/contracts/portfolio-maturity-v1.schema.json','utf8'))"
+
+      - name: Run deterministic regression checks
+        run: node test/portfolio-maturity-regression-checks.js
+
+      - name: Run Claude workflow regression checks
+        run: node test/claude-review-workflow-regression-checks.js
