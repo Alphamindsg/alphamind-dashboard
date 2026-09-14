@@ -37,6 +37,10 @@ Each destination and part has its own status, receipt, retry/UNKNOWN state, and
 audit record. A report is `RECONCILED` only after every required destination
 part has a verified receipt. Generation, export, handoff, and first-chunk
 success never imply delivery.
+Definite provider rejection is recorded as `BLOCKED` with a `REJECTED` audit
+transition, while transport ambiguity remains `UNKNOWN`. Telegram retry-after
+cooldowns are stored in the shared SQLite provider state used by both event and
+report workers.
 
 `OfflineReportAdapter` is explicitly a test double. `LocalHandoffAdapter`
 remains unconfirmed until a trusted platform adapter records a receipt bound to
