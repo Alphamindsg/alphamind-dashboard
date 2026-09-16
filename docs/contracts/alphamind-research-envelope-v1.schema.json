@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://alphamind.local/contracts/alphamind-research-envelope-v1.schema.json",
+  "title": "Sanitized AlphaMind Research Envelope v1",
+  "description": "Public research may flow out of AlphaMind; private Personal Finance OS data must never flow into this envelope.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "record_type", "public_research_only", "exact_head_sha",
+    "instrument_id", "thesis_version", "evidence_ids"
+  ],
+  "properties": {
+    "record_type": { "const": "RESEARCH_ENVELOPE" },
+    "public_research_only": { "const": true },
+    "exact_head_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "instrument_id": { "type": "string", "minLength": 1 },
+    "thesis_version": { "type": "string", "minLength": 1 },
+    "evidence_ids": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "recommendation": {
+      "enum": [
+        "WATCH", "CONSIDER_BUY", "HOLD", "CONSIDER_TRIM_SELL",
+        "AVOID", "INSUFFICIENT_EVIDENCE"
+      ]
+    },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "content_hash": { "type": ["string", "null"] }
+  }
+}
