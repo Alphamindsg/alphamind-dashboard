@@ -100,3 +100,16 @@ Manual acceptance is documented in [DASH-001 acceptance test](docs/DASH-001-acce
 - approval, merge, publication, or external execution from the Command Center;
 - Ask AlphaMind implementation;
 - deployment or merge.
+
+## Offline release-evidence pilot
+
+The reusable `.agents/skills/alphamind-evidence` skill collects the existing seven automated checks from a candidate Git snapshot and verifies exported bytes against the full Git tree. It records artifact hashes, exact candidate and explicit missing release coverage. It does not grant production authorization.
+
+Requires Python 3.12+ and Node.js. From a clean committed checkout, with evidence stored outside the repository:
+
+```bash
+python -m unittest discover -s .agents/skills/alphamind-evidence/tests -v
+python .agents/skills/alphamind-evidence/scripts/evidence.py collect-dashboard --repo . --out ../dashboard-evidence-new-run --baseline <exact-baseline-sha>
+```
+
+The collector exits 2 when release coverage is incomplete, even if all automated checks pass. Authenticate producer/review records separately; local artifact integrity is not production authorization. See the skill's `references/pilot.md` for the tested boundary.

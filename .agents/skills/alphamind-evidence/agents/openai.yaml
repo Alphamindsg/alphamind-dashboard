@@ -1,0 +1,4 @@
+interface:
+  display_name: "Evidence and Provenance Engineering"
+  short_description: "Alphamindsg Evidence and Provenance Engineering"
+  default_prompt: "Use $alphamind-evidence for the scoped repository task and report executable evidence and remaining gates."
