@@ -85,6 +85,9 @@ assert.equal(claudeWorkflow.indexOf("allowed_non_write_users:") === -1, true);
 
 assert.match(claudeWorkflow, /EXACT HEAD SHA:\s+\$\{\{\s*github\.event\.pull_request\.head\.sha\s*\}\}/);
 assert.match(maturityWorkflow, /"\.github\/workflows\/claude-review\.yml"/);
+assert.match(maturityWorkflow, /"telegram-gateway-regression-checks\.py"/);
+assert.match(maturityWorkflow, /"notification_gateway\/\*\*"/);
+assert.match(maturityWorkflow, /"\.github\/workflows\/notification-gateway\.yml"/);
 assert.match(maturityWorkflow, /"test\/claude-review-workflow-regression-checks\.js"/);
 assert.match(maturityWorkflow, /EXPECTED_HEAD_SHA:\s+\$\{\{\s*github\.event\.pull_request\.head\.sha \|\| github\.sha\s*\}\}/);
 assert.match(maturityWorkflow, /node test\/claude-review-workflow-regression-checks\.js/);

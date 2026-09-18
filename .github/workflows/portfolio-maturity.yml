@@ -5,9 +5,12 @@ on:
     paths:
       - "docs/contracts/portfolio-maturity-v1.schema.json"
       - "portfolio-maturity-validator.js"
+      - "telegram-gateway-regression-checks.py"
+      - "notification_gateway/**"
       - "test/portfolio-maturity-regression-checks.js"
       - "test/claude-review-workflow-regression-checks.js"
       - ".github/workflows/claude-review.yml"
+      - ".github/workflows/notification-gateway.yml"
       - ".github/workflows/portfolio-maturity.yml"
   push:
     branches:
