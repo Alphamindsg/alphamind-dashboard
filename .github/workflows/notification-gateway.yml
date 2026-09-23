@@ -32,10 +32,12 @@ jobs:
             "notification_gateway/adapters.py"
             "notification_gateway/gateway.py"
             "notification_gateway/report.py"
+            "notification_gateway/telegram_ui.py"
             "notification_gateway/test_gateway.py"
             "notification_gateway/test_report.py"
             "notification_gateway/test_claude_workflow.py"
             "notification_gateway/test_notification_workflow.py"
+            "notification_gateway/test_telegram_ui.py"
           )
           missing=0
           for path in "${required_paths[@]}"; do
@@ -59,6 +61,7 @@ jobs:
           python3 -m unittest notification_gateway.test_report
           python3 -m unittest notification_gateway.test_claude_workflow
           python3 -m unittest notification_gateway.test_notification_workflow
+          python3 -m unittest notification_gateway.test_telegram_ui
           python3 telegram-gateway-regression-checks.py
           node --check app.js
           node --check memory-engine.js

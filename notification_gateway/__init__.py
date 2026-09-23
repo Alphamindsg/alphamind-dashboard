@@ -17,6 +17,7 @@ from .adapters import (
     OfflineReportAdapter,
 )
 from .report import DeliveryBlocked, DeliveryReceipt, DeliveryRetry, Report, ReportGateway, ReportStore
+from .telegram_ui import TelegramInlineMenuService
 
 __all__ = [
     "DirectTelegramTransport",
@@ -37,4 +38,5 @@ __all__ = [
     "LocalHandoffAdapter",
     "DirectTelegramReportAdapter",
     "format_telegram_message",
+    "TelegramInlineMenuService",
 ]

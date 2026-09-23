@@ -12,10 +12,12 @@ REQUIRED_PATHS = (
     "notification_gateway/adapters.py",
     "notification_gateway/gateway.py",
     "notification_gateway/report.py",
+    "notification_gateway/telegram_ui.py",
     "notification_gateway/test_gateway.py",
     "notification_gateway/test_report.py",
     "notification_gateway/test_claude_workflow.py",
     "notification_gateway/test_notification_workflow.py",
+    "notification_gateway/test_telegram_ui.py",
 )
 
 
@@ -48,6 +50,7 @@ class NotificationWorkflowContractTests(unittest.TestCase):
         self.assertIn("python3 -m unittest notification_gateway.test_report", self.text)
         self.assertIn("python3 -m unittest notification_gateway.test_claude_workflow", self.text)
         self.assertIn("python3 -m unittest notification_gateway.test_notification_workflow", self.text)
+        self.assertIn("python3 -m unittest notification_gateway.test_telegram_ui", self.text)
         self.assertIn("python3 telegram-gateway-regression-checks.py", self.text)
         self.assertNotIn("continue-on-error: true", self.text)
 

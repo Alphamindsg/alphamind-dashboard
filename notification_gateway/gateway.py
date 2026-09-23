@@ -247,6 +247,24 @@ class SQLiteState:
         CREATE TABLE IF NOT EXISTS provider_state (
           name TEXT PRIMARY KEY, cooldown_until REAL NOT NULL DEFAULT 0
         );
+        CREATE TABLE IF NOT EXISTS telegram_menu_sessions (
+          session_id TEXT PRIMARY KEY, chat_id TEXT NOT NULL, user_id TEXT NOT NULL,
+          message_id INTEGER, revision INTEGER NOT NULL, state_json TEXT NOT NULL,
+          active INTEGER NOT NULL DEFAULT 1, created_at REAL NOT NULL, updated_at REAL NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS telegram_menu_callbacks (
+          callback_id TEXT PRIMARY KEY, session_id TEXT NOT NULL, action TEXT NOT NULL,
+          outcome TEXT NOT NULL, detail TEXT NOT NULL, created_at REAL NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS telegram_menu_rate_limits (
+          chat_id TEXT NOT NULL, user_id TEXT NOT NULL, window_start REAL NOT NULL,
+          count INTEGER NOT NULL, PRIMARY KEY(chat_id, user_id)
+        );
+        CREATE TABLE IF NOT EXISTS telegram_menu_audit (
+          id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL,
+          revision INTEGER NOT NULL, view TEXT NOT NULL, detail TEXT NOT NULL,
+          created_at REAL NOT NULL
+        );
         """)
 
     def close(self) -> None:
@@ -525,10 +543,10 @@ class DirectTelegramTransport:
             raise GatewayError("Telegram configuration is incomplete")
         self.token, self.chat_id, self.opener = token, chat_id, opener
 
-    def send(self, text: str) -> TransportOutcome:
+    def _post(self, method: str, payload: Mapping[str, Any]) -> TransportOutcome:
         request = urllib.request.Request(
-            f"https://api.telegram.org/bot{self.token}/sendMessage",
-            data=json.dumps({"chat_id": self.chat_id, "text": text}).encode(),
+            f"https://api.telegram.org/bot{self.token}/{method}",
+            data=json.dumps(payload).encode(),
             headers={"Content-Type": "application/json"}, method="POST",
         )
         try:
@@ -537,12 +555,16 @@ class DirectTelegramTransport:
                 if not isinstance(body, dict) or body.get("ok") is not True:
                     return TransportOutcome("unknown")
                 result = body.get("result")
+                if result is True:
+                    return TransportOutcome("sent")
                 if not isinstance(result, dict) or type(result.get("message_id")) is not int:
                     return TransportOutcome("unknown")
                 chat = result.get("chat")
-                if not isinstance(chat, dict) or str(chat.get("id")) != str(self.chat_id):
+                expected_chat = str(payload.get("chat_id", self.chat_id))
+                if not isinstance(chat, dict) or str(chat.get("id")) != expected_chat:
                     return TransportOutcome("unknown")
-                if result.get("text") != text:
+                expected_text = payload.get("text")
+                if expected_text is not None and result.get("text") != expected_text:
                     return TransportOutcome("unknown")
                 return TransportOutcome("sent", result["message_id"], str(chat["id"]), result["text"])
         except urllib.error.HTTPError as exc:
@@ -559,6 +581,30 @@ class DirectTelegramTransport:
             return TransportOutcome("unknown")
         except (urllib.error.URLError, TimeoutError, OSError, ValueError, TypeError):
             return TransportOutcome("unknown")
+
+    def send(self, text: str, reply_markup: Mapping[str, Any] | None = None,
+             chat_id: str | None = None) -> TransportOutcome:
+        payload: dict[str, Any] = {"chat_id": chat_id or self.chat_id, "text": text}
+        if reply_markup is not None:
+            payload["reply_markup"] = reply_markup
+        return self._post("sendMessage", payload)
+
+    def edit(self, message_id: int, text: str, reply_markup: Mapping[str, Any] | None = None,
+             chat_id: str | None = None) -> TransportOutcome:
+        payload: dict[str, Any] = {
+            "chat_id": chat_id or self.chat_id,
+            "message_id": message_id,
+            "text": text,
+        }
+        if reply_markup is not None:
+            payload["reply_markup"] = reply_markup
+        return self._post("editMessageText", payload)
+
+    def answer_callback(self, callback_id: str, text: str = "") -> TransportOutcome:
+        payload: dict[str, Any] = {"callback_query_id": callback_id}
+        if text:
+            payload["text"] = text
+        return self._post("answerCallbackQuery", payload)
 
 
 class Gateway:
